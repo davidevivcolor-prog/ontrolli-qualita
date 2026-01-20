@@ -682,9 +682,10 @@ import {
   collection, doc,
   getDoc, setDoc, deleteDoc,
   getDocs,
-  query, where, orderBy, limit,
-  enableIndexedDbPersistence
+  query, where, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app-check.js";
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -699,11 +700,12 @@ const firebaseConfig = {
 };
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+// App Check (reCAPTCHA v3) - incolla qui la SITE KEY che ti mostra Firebase App Check
+initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider("PASTE_APP_CHECK_SITE_KEY"),
+  isTokenAutoRefreshEnabled: true
+});
 const fs = getFirestore(app);
-
-// Make writes feel instant: enable local persistence (IndexedDB).
-// If multiple tabs are open, Firestore may refuse persistence (safe to ignore).
-enableIndexedDbPersistence(fs).catch(() => {});
 
 // Collections
 const COL_PRODUCTS = "products";
@@ -768,31 +770,28 @@ async function getAllByIndex(store, indexName, value){
   if(store.__name !== STORES.checks) throw new Error("Index su store non supportato: " + store.__name);
 
   if(indexName === "by_code"){
-    // Avoid composite indexes: filter only, then sort client-side.
     const qy = query(
       collection(fs, COL_CHECKS),
-      where("code", "==", value)
+      where("code", "==", value),
+      orderBy("dateISO", "desc")
     );
     const snap = await getDocs(qy);
-    const list = snap.docs.map(d => d.data());
-    list.sort((a,b)=> (b.dateISO||"").localeCompare(a.dateISO||""));
-    return list;
+    return snap.docs.map(d => d.data());
   }
 
   if(indexName === "by_lotto"){
-    // Avoid composite indexes: filter only, then sort client-side.
+    // NOTE: if you get an "index required" error, Firestore Console will give you a link to create it.
     const qy = query(
       collection(fs, COL_CHECKS),
-      where("lotto", "==", value)
+      where("lotto", "==", value),
+      orderBy("dateISO", "desc")
     );
     const snap = await getDocs(qy);
-    const list = snap.docs.map(d => d.data());
-    list.sort((a,b)=> (b.dateISO||"").localeCompare(a.dateISO||""));
-    return list;
+    return snap.docs.map(d => d.data());
   }
 
   if(indexName === "by_date"){
-    const qy = query(collection(fs, COL_CHECKS), orderBy("dateISO", "desc"), limit(50));
+    const qy = query(collection(fs, COL_CHECKS), orderBy("dateISO", "desc"));
     const snap = await getDocs(qy);
     return snap.docs.map(d => d.data());
   }
@@ -870,8 +869,9 @@ async function renderHomeRecentProducts(){
 
   const t = tx([STORES.products, STORES.checks]);
   const products = await getAll(t.objectStore(STORES.products));
-  const checks = await getAllByIndex(t.objectStore(STORES.checks), "by_date", null);
+  const checks = await getAll(t.objectStore(STORES.checks));
 
+  checks.sort((a,b)=> (b.dateISO||"").localeCompare(a.dateISO||""));
 
   const seen = new Set();
   const rows = [];
@@ -1019,10 +1019,11 @@ function evaluateValueAgainstSpec(c, v){
   }
   return true;
 }
-async function getChecks(code, limitN=null){
+async function getChecks(code){
   const t = tx([STORES.checks]);
   const list = await getAllByIndex(t.objectStore(STORES.checks), "by_code", code);
-  return (limitN && list.length>limitN) ? list.slice(0, limitN) : list;
+  list.sort((a,b)=> (b.dateISO||"").localeCompare(a.dateISO||""));
+  return list;
 }
 async function findChecksByLotto(lotto){
   const t = tx([STORES.checks]);
@@ -1173,7 +1174,7 @@ async function loadProduct(rawCode){
 
   renderStdTable(p.controls || []);
 
-  const checks = await getChecks(code, 5);
+  const checks = await getChecks(code);
   renderLastChecks5(p, checks);
 
   showView("product");
@@ -1557,19 +1558,11 @@ async function saveCheck(){
     modifications: {}
   };
 
-  const btn = document.getElementById("saveCheckBtn");
-  const prev = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "Salvataggio...";
-  try{
-    const t = tx([STORES.checks], "readwrite");
-    await put(t.objectStore(STORES.checks), check);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = prev;
-  }
+  const t = tx([STORES.checks], "readwrite");
+  await put(t.objectStore(STORES.checks), check);
 
-  // Reload only what is needed (fast)
+  await refreshKPIs();
+  await renderHomeRecentProducts();
   await loadProduct(p.code);
 }
 
