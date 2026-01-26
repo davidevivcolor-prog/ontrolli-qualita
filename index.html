@@ -856,18 +856,16 @@ function esc(s){ return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","
 function toNumber(v){ if(v===""||v===null||v===undefined) return null; const n=Number(v); return Number.isFinite(n)?n:null; }
 function csvEscape(v){ const s=String(v ?? ""); if(/[",\n;]/.test(s)) return '"' + s.replaceAll('"','""') + '"'; return s; }
 function downloadText(filename, text){
-  const blob=new Blob([text],{type:"text/plain;charset=utf-8"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob); a.download=filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(a.href);
+  const blob=new Blob([text],{type:"text/plain;charset=utf-8"}
+
+
+// === FIX: helper per allegati PDF ===
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     if (!file) {
       resolve(null);
       return;
     }
-
     const reader = new FileReader();
     reader.onload = () => {
       resolve({
@@ -881,7 +879,12 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
-  
+// === END FIX ===
+);
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
 
 /* =========================
    PDF: Certificazioni ΔE / Resa
