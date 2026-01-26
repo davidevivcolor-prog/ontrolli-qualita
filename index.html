@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Registro Controlli (Cloud)</title>
+  <link rel="icon" href="data:,">
   <style>
     *{ box-sizing:border-box; }
     :root{
@@ -1854,7 +1855,7 @@ async function saveCheck(){
       const file = fInp?.files?.[0] || null;
       if(file){
         const att = await readPdfAttachment(file);
-        if(att){ attachmentName = att.name; attachmentB64 = att.b64; }
+        if(att){ r.attachmentName = att.name; r.attachmentB64 = att.b64; }
       }
     }
 
@@ -2152,8 +2153,8 @@ async function openCheckDetailPage(checkId){
           const file = fEl.files?.[0] || null;
           if(!file) return;
           r.attachmentName = file.name || "allegato.pdf";
-          r.const att = await readPdfAttachment(file);
-        if(att){ attachmentName = att.name; attachmentB64 = att.b64; }
+          const att = await readPdfAttachment(file);
+        if(att){ r.attachmentName = att.name; r.attachmentB64 = att.b64; }
           const dlBtn = card.querySelector(`button[data-attdl="${CSS.escape(ctrl.key)}"]`);
           if(dlBtn) dlBtn.disabled = !r.attachmentB64;
           updateDetailTitle();
