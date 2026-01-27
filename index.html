@@ -1055,7 +1055,8 @@ function pdfSafe(s){
 
 function pdfDocText(doc, txt, x, y, opts){
   const safe = Array.isArray(txt) ? txt.map(pdfSafe) : pdfSafe(txt);
-  return pdfDocText(doc, safe, x, y, opts);
+  // chiama la funzione originale jsPDF (doc.text) senza ricorsione
+  return (opts === undefined) ? doc.text(safe, x, y) : doc.text(safe, x, y, opts);
 }
 
 function certFilename(prefix, code, lotto){
