@@ -884,12 +884,8 @@ function fileToBase64(file){
 ========================= */
 
 // Logo VivColor (inline SVG). Se vuoi sostituirlo con il logo ufficiale, basta rimpiazzare questa dataURL.
-const VIVCOLOR_LOGO_DATA_URL = "assets/logo_vivcolor.png" + encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120">
-  <rect width="420" height="120" fill="white"/>
-  <text x="18" y="78" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="64" fill="#d10f1a">VIV</text>
-  <text x="150" y="78" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="64" fill="#111827">COLOR</text>
-</svg>`);
+const VIVCOLOR_LOGO_URL = "assets/logo_vivcolor.png";
+
 
 function base64ToUint8Array(b64){
   const bin = atob(b64 || "");
@@ -992,7 +988,7 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
     doc.text(`DE rilevato: ${result?.value ?? ""}`, margin, y); y += 8;
 
     doc.setFont("helvetica","normal");
-    writePara("Il controllo è da considerarsi conforme qualora il valore di ΔE rilevato risulti uguale o inferiore al limite di accettazione previsto, definito in funzione delle specifiche di prodotto e/o delle richieste del cliente:");
+    writePara("Il controllo è da considerarsi conforme qualora il valore di DE rilevato risulti uguale o inferiore al limite di accettazione previsto, definito in funzione delle specifiche di prodotto e/o delle richieste del cliente:");
 
     doc.setFont("helvetica","bold");
     doc.text(`Limite di accettazione DE: ${specLabel ?? ""}`, margin, y); y += 8;
