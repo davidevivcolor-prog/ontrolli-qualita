@@ -920,7 +920,7 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
   const pageW = doc.internal.pageSize.getWidth();
   const y0 = 14;
 
-  try{ doc.addImage(VIVCOLOR_LOGO_DATA_URL, "PNG", margin, y0, 46, 13); } catch(_) {}
+  try{ doc.addImage(VIVCOLOR_LOGO_URL, "PNG", margin, y0, 46, 13); } catch(_) {}
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
