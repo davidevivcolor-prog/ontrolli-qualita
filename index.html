@@ -1023,8 +1023,22 @@ function downloadBytes(filename, bytes, mime="application/pdf"){
 function pdfSafe(s){
   return String(s ?? "")
     .replaceAll("\r","")
+    .replaceAll("\n"," ")
+    // trattini
     .replace(/[–—]/g, "-")
+    .replace(/[‐‑‒−]/g, "-")
+    // simboli matematici (meglio ASCII)
+    .replace(/≤/g, "<=")
+    .replace(/≥/g, ">=")
+    // gradi: "20°C" -> "20 C"
+    .replace(/°\s*C/gi, " C")
+    .replace(/°/g, "")
+    // apici/virgolette “smart”
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    // spazi strani
     .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -1638,17 +1652,18 @@ function hasSpecToRequest(c){
 }
 function specText(c){
   if(c.type==="num_max"){
-    return c.spec?.max==null ? "" : `≤ ${c.spec.max}`;
+    return c.spec?.max==null ? "" : `max ${c.spec.max}`;
   }
   if(c.type==="num_minmax"){
     const mn=c.spec?.min, mx=c.spec?.max;
     if(mn==null && mx==null) return "";
-    if(mn!=null && mx!=null) return `${mn} → ${mx}`;
-    if(mn!=null) return `≥ ${mn}`;
-    return `≤ ${mx}`;
+    if(mn!=null && mx!=null) return `${mn} - ${mx}`;
+    if(mn!=null) return `min ${mn}`;
+    return `max ${mx}`;
   }
   return "";
 }
+
 function evaluateValueAgainstSpec(c, v){
   if(c.type==="num_max"){
     if(c.spec?.max==null) return true;
