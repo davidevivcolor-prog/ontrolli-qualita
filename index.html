@@ -206,7 +206,49 @@
       font-size:12px;
       line-height:1.35;
     }
-  </style>
+  
+  /* ===== CoA Modal ===== */
+  .overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.55);
+    display:flex; align-items:center; justify-content:center;
+    z-index:9999;
+  }
+  .overlay.hide{ display:none; }
+  .modal{
+    width:min(760px, 92vw);
+    max-height:86vh;
+    overflow:auto;
+    background:#121212;
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    padding:16px;
+  }
+  .modal h3{ margin:0 0 6px 0; }
+  .modal .muted{ opacity:.82; }
+  .checklist{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px 14px;
+    margin-top:10px;
+  }
+  .checkitem{
+    display:flex;
+    gap:10px;
+    align-items:flex-start;
+    padding:10px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:12px;
+    background:rgba(255,255,255,.03);
+  }
+  .checkitem b{ display:block; line-height:1.1; }
+  .checkitem .muted{ font-size:12px; }
+  @media (max-width:560px){
+    .checklist{ grid-template-columns: 1fr; }
+  }
+
+</style>
 </head>
 
 <body>
@@ -586,6 +628,7 @@
           </div>
           <div class="btns" style="margin-top:0">
             <button id="detailBackBtn">Indietro</button>
+            <button id="detailCoABtn">Certificato di analisi (PDF)</button>
             <button class="primary" id="detailSaveBtn">Salva modifiche</button>
           </div>
         </div>
@@ -654,6 +697,49 @@
 
     </div>
   </div>
+
+  <!-- CoA (Certificato di Analisi) Modal -->
+  <div id="coaOverlay" class="overlay hide" aria-hidden="true">
+    <div class="modal">
+      <div class="topline" style="margin-top:0">
+        <div>
+          <div class="muted">PDF</div>
+          <div class="title" id="coaTitle">Certificato di Analisi</div>
+        </div>
+        <div class="btns" style="margin-top:0">
+          <button id="coaCloseBtn">Chiudi</button>
+          <button class="primary" id="coaGenerateBtn">Genera PDF</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="row2">
+        <div>
+          <label>Data scadenza certificato</label>
+          <input id="coaExpiry" type="date" />
+          <div class="muted">Suggerito: 1 anno dopo la data del controllo (modificabile).</div>
+        </div>
+        <div>
+          <label>Parametri da includere</label>
+          <div class="btns" style="margin-top:0">
+            <button class="smallbtn" id="coaAllBtn">Tutti</button>
+            <button class="smallbtn secondary" id="coaNoneBtn">Nessuno</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="coaParams" class="checklist"></div>
+
+      <div class="hr"></div>
+
+      <div class="muted" style="font-size:13px">
+        Nota: nel PDF verranno sempre inclusi i dati iniziali del prodotto e del controllo (codice, nome, data controllo, lotto, scadenza).
+      </div>
+    </div>
+  </div>
+
+
 </div>
 
 <script>
@@ -1074,6 +1160,256 @@ async function buildMergedCertificatePdf({ kind, product, check, result, specLab
 
   const out = await merged.save();
   return out;
+}
+
+
+/* =========================
+   PDF: Certificato di Analisi (CoA)
+========================= */
+
+// Intestazioni (immagini) - mettile in /assets su GitHub Pages
+const COA_HEADER_URL = "assets/Intestazione_sopra.JPG";
+const COA_FOOTER_URL = "assets/Intestazione_sotto.JPG";
+
+// Cache immagini per evitare fetch multipli
+const __imgCache = new Map();
+
+function fmtDateOnly(iso){
+  try{
+    const d = new Date(iso);
+    return d.toLocaleDateString("it-IT",{year:"numeric",month:"2-digit",day:"2-digit"});
+  }catch{ return String(iso ?? ""); }
+}
+function addYearsToDateISO(dateISO, years){
+  const d = new Date(dateISO);
+  d.setFullYear(d.getFullYear() + years);
+  // ritorna YYYY-MM-DD (per input type=date)
+  const dd = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return dd.toISOString().slice(0,10);
+}
+
+async function fetchImageDataUrl(url){
+  if(__imgCache.has(url)) return __imgCache.get(url);
+  const res = await fetch(url, { cache: "force-cache" });
+  if(!res.ok) throw new Error("Immagine non trovata: " + url);
+  const blob = await res.blob();
+  const dataUrl = await new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onload = ()=> resolve(String(fr.result||""));
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+  // ricava dimensioni
+  const dims = await new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=> resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+  const out = { dataUrl, w: dims.w, h: dims.h, format: (blob.type||"").includes("png") ? "PNG" : "JPEG" };
+  __imgCache.set(url, out);
+  return out;
+}
+
+async function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate }){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 12;
+
+  // Header/Footer full-bleed
+  let headerH = 0;
+  let footerH = 0;
+
+  async function drawHeaderFooter(){
+    try{
+      const hImg = await fetchImageDataUrl(COA_HEADER_URL);
+      headerH = (hImg.h / hImg.w) * pageW;
+      doc.addImage(hImg.dataUrl, hImg.format, 0, 0, pageW, headerH);
+    }catch(err){
+      console.warn("Header non caricato:", err);
+      headerH = 0;
+    }
+
+    try{
+      const fImg = await fetchImageDataUrl(COA_FOOTER_URL);
+      footerH = (fImg.h / fImg.w) * pageW;
+      doc.addImage(fImg.dataUrl, fImg.format, 0, pageH - footerH, pageW, footerH);
+    }catch(err){
+      console.warn("Footer non caricato:", err);
+      footerH = 0;
+    }
+  }
+
+  await drawHeaderFooter();
+
+  function ensureSpace(hNeeded){
+    const yLimit = pageH - footerH - margin;
+    if(y + hNeeded > yLimit){
+      doc.addPage();
+      // ridisegna header/footer su nuova pagina
+      // (nota: bisogna ricalcolare pageH/pageW non serve, A4 fisso)
+      // eslint-disable-next-line no-use-before-define
+      y = margin + headerH + 4;
+      // draw again
+      // (non await qui: immagini già in cache, ma funzione è sync -> facciamo addImage direttamente)
+      try{
+        const hImg = __imgCache.get(COA_HEADER_URL);
+        if(hImg){
+          doc.addImage(hImg.dataUrl, hImg.format, 0, 0, pageW, headerH);
+        }
+      }catch(_){}
+      try{
+        const fImg = __imgCache.get(COA_FOOTER_URL);
+        if(fImg){
+          doc.addImage(fImg.dataUrl, fImg.format, 0, pageH - footerH, pageW, footerH);
+        }
+      }catch(_){}
+    }
+  }
+
+  // Start content
+  let y = margin + headerH + 4;
+
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(14);
+  doc.text("CERTIFICATO DI ANALISI", margin, y);
+  y += 8;
+
+  doc.setFont("helvetica","normal");
+  doc.setFontSize(10);
+
+  const controlDateOnly = fmtDateOnly(check?.dateISO);
+  const expiryLabel = expiryDate ? fmtDateOnly(expiryDate) : "";
+
+  // Dati prodotto/controllo
+  const info = [
+    ["Nome prodotto", product?.name ?? ""],
+    ["Codice prodotto", product?.code ?? ""],
+    ["Data controllo", controlDateOnly],
+    ["Data scadenza", expiryLabel],
+    ["Lotto", check?.lotto ?? ""],
+  ];
+
+  const boxW = pageW - margin*2;
+  const rowH = 6;
+
+  // box
+  doc.setDrawColor(220);
+  doc.rect(margin, y, boxW, info.length*rowH + 6);
+  y += 4;
+
+  for(const [k,v] of info){
+    doc.setFont("helvetica","bold"); doc.text(String(k)+":", margin+3, y+4);
+    doc.setFont("helvetica","normal"); doc.text(pdfSafe(v), margin+35, y+4, { maxWidth: boxW-40 });
+    y += rowH;
+  }
+  y += 6;
+
+  // Tabella parametri
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(11);
+  doc.text("Risultati delle prove", margin, y);
+  y += 6;
+
+  const cols = [
+    { label:"Parametro", w: (boxW*0.46) },
+    { label:"Valore",    w: (boxW*0.18) },
+    { label:"STD",       w: (boxW*0.22) },
+    { label:"UM",        w: (boxW*0.14) },
+  ];
+
+  function drawTableHeader(){
+    doc.setFillColor(245,245,245);
+    doc.setDrawColor(220);
+    doc.setTextColor(0);
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(10);
+
+    let x = margin;
+    const h = 7;
+    doc.rect(x, y, boxW, h, "F");
+    for(const c of cols){
+      doc.rect(x, y, c.w, h);
+      doc.text(c.label, x+2, y+5);
+      x += c.w;
+    }
+    y += h;
+  }
+
+  function drawRow(cells){
+    doc.setFont("helvetica","normal");
+    doc.setFontSize(10);
+    doc.setDrawColor(220);
+
+    // calcola righe wrap per "Parametro"
+    const paramLines = doc.splitTextToSize(String(cells[0] ?? ""), cols[0].w - 4);
+    const maxLines = Math.max(1, paramLines.length);
+    const h = 6 + (maxLines-1)*4;
+
+    ensureSpace(h + 10);
+
+    let x = margin;
+    // cell 0
+    doc.rect(x, y, cols[0].w, h);
+    doc.text(paramLines, x+2, y+4);
+    x += cols[0].w;
+
+    // altre celle
+    for(let i=1;i<cols.length;i++){
+      doc.rect(x, y, cols[i].w, h);
+      const txt = String(cells[i] ?? "");
+      doc.text(txt, x+2, y+4, { maxWidth: cols[i].w - 4 });
+      x += cols[i].w;
+    }
+    y += h;
+  }
+
+  drawTableHeader();
+
+  const results = (check?.results || []).filter(r => selectedKeys.includes(r.key));
+  if(results.length === 0){
+    drawRow(["—", "—", "—", "—"]);
+  } else {
+    for(const r of results){
+      const std = r.specText ?? "";
+      const value = (r.value===null || r.value===undefined || r.value==="") ? "" : String(r.value);
+      drawRow([ r.name ?? r.key, value, std, r.unit ?? "" ]);
+    }
+  }
+
+  y += 8;
+  ensureSpace(50);
+
+  // Dichiarazione ISO9001 + firma
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(11);
+  doc.text("Dichiarazione di conformità", margin, y);
+  y += 6;
+
+  doc.setFont("helvetica","normal");
+  doc.setFontSize(10);
+
+  const decl = [
+    "Il Laboratorio VivColor S.r.l. dichiara che i risultati riportati nel presente certificato si riferiscono esclusivamente al campione analizzato e alle condizioni di prova adottate.",
+    "Per i parametri inclusi nel presente documento, il prodotto risulta conforme alle specifiche applicabili alla data del controllo.",
+    "Il presente certificato di analisi non può essere riprodotto parzialmente senza autorizzazione scritta del Laboratorio."
+  ].join(" ");
+
+  const declLines = doc.splitTextToSize(decl, boxW);
+  doc.text(declLines, margin, y);
+  y += declLines.length * 4.6 + 10;
+
+  doc.setFont("helvetica","bold");
+  doc.text("Il Responsabile del Laboratorio", margin, y);
+  y += 10;
+
+  doc.setFont("helvetica","bold");
+  doc.text("Tiziano Donini", margin, y);
+
+  return doc.output("arraybuffer");
 }
 
 /* =========================
@@ -2208,6 +2544,79 @@ async function openCheckDetailPage(checkId){
   showView("detail");
 }
 
+/* =========================
+   CoA (Certificato di Analisi) - UI + PDF
+========================= */
+function openCoAModal(){
+  if(!detailCheck || !cachedProduct) return;
+
+  const overlay = document.getElementById("coaOverlay");
+  const title = document.getElementById("coaTitle");
+  const paramsWrap = document.getElementById("coaParams");
+  const expiryEl = document.getElementById("coaExpiry");
+
+  title.textContent = `Certificato di Analisi — ${cachedProduct.code} • Lotto ${detailCheck.lotto ?? ""}`;
+
+  // Default scadenza: +1 anno dalla data controllo
+  try{
+    expiryEl.value = addYearsToDateISO(detailCheck.dateISO, 1);
+  }catch(_){
+    expiryEl.value = "";
+  }
+
+  paramsWrap.innerHTML = "";
+
+  const results = (detailCheck.results || []).slice();
+  // Default: seleziona solo risultati con valore presente
+  const items = results.map(r=>{
+    const hasValue = !(r.value===null || r.value===undefined || r.value==="");
+    return { ...r, _checked: hasValue };
+  });
+
+  for(const r of items){
+    const div = document.createElement("div");
+    div.className = "checkitem";
+    div.innerHTML = `
+      <input type="checkbox" data-coa-k="${esc(r.key)}" ${r._checked ? "checked" : ""} />
+      <div>
+        <b>${esc(r.name ?? r.key)}</b>
+        <div class="muted">${esc(r.specText ?? "STD: —")} • ${esc(r.unit ?? "")} ${r.value!=null ? `• valore: <b>${esc(r.value)}</b>` : ""}</div>
+      </div>
+    `;
+    paramsWrap.appendChild(div);
+  }
+
+  overlay.classList.remove("hide");
+  overlay.setAttribute("aria-hidden","false");
+}
+
+function closeCoAModal(){
+  const overlay = document.getElementById("coaOverlay");
+  overlay.classList.add("hide");
+  overlay.setAttribute("aria-hidden","true");
+}
+
+async function generateCoAPdf(){
+  if(!detailCheck || !cachedProduct) return;
+
+  const expiryEl = document.getElementById("coaExpiry");
+  const expiry = (expiryEl.value || "").trim(); // YYYY-MM-DD
+
+  const checked = Array.from(document.querySelectorAll('#coaParams input[type="checkbox"][data-coa-k]'))
+    .filter(x=>x.checked)
+    .map(x=>x.getAttribute("data-coa-k"));
+
+  const bytes = await buildCoAPdfBytes({
+    product: cachedProduct,
+    check: detailCheck,
+    selectedKeys: checked,
+    expiryDate: expiry
+  });
+
+  const filename = certFilename("CERTIFICATO_ANALISI", detailCheck.code, detailCheck.lotto);
+  downloadBytes(filename, new Uint8Array(bytes), "application/pdf");
+}
+
 async function saveDetail(){
   if(!detailCheck) return;
 
@@ -2376,6 +2785,30 @@ document.getElementById("detailBackBtn").addEventListener("click", async ()=>{
   }
 });
 document.getElementById("detailSaveBtn").addEventListener("click", saveDetail);
+
+document.getElementById("detailCoABtn").addEventListener("click", ()=>{
+  openCoAModal();
+});
+
+document.getElementById("coaCloseBtn").addEventListener("click", closeCoAModal);
+document.getElementById("coaOverlay").addEventListener("click", (e)=>{
+  if(e.target && e.target.id === "coaOverlay") closeCoAModal();
+});
+document.getElementById("coaAllBtn").addEventListener("click", ()=>{
+  document.querySelectorAll('#coaParams input[type="checkbox"][data-coa-k]').forEach(cb=>cb.checked=true);
+});
+document.getElementById("coaNoneBtn").addEventListener("click", ()=>{
+  document.querySelectorAll('#coaParams input[type="checkbox"][data-coa-k]').forEach(cb=>cb.checked=false);
+});
+document.getElementById("coaGenerateBtn").addEventListener("click", async ()=>{
+  try{
+    await generateCoAPdf();
+    closeCoAModal();
+  }catch(err){
+    console.error(err);
+    alert("Errore generazione PDF: " + (err?.message || err));
+  }
+});
 
 document.getElementById("exportHistCsvBtn").addEventListener("click", async ()=>{
   const checks = await getChecks(currentCode);
