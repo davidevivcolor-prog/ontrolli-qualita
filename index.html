@@ -735,12 +735,10 @@
 
       <div id="coaParams" class="checklist"></div>
 
-      <div class="row" style="margin-top:6px">
-        <label style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="coaIncludeNotes" />
-          <span>Includi note del controllo nel PDF</span>
-        </label>
-      </div>
+      <label style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <input id="coaIncludeNotes" type="checkbox" />
+        <span>Includi note del controllo nel PDF</span>
+      </label>
 
       <div class="hr"></div>
 
@@ -1027,17 +1025,12 @@ function downloadBytes(filename, bytes, mime="application/pdf"){
   URL.revokeObjectURL(a.href);
 }
 
-// ======================
-// PDF sanitization (anti "!'")
-// ======================
 function pdfSafe(s){
   return String(s ?? "")
     .replaceAll("\r","")
     .replaceAll("\n"," ")
     // trattini / meno / varianti unicode -> "-"
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u00AD\u2043\uFE58\uFE63\uFF0D]/g, "-")
-    .replace(/[–—]/g, "-")
-    .replace(/[‐‑‒−]/g, "-")
     // simboli matematici (meglio ASCII)
     .replace(/≤/g, "max ")
     .replace(/≥/g, "min ")
@@ -1045,33 +1038,27 @@ function pdfSafe(s){
     .replace(/°\s*C/gi, " C")
     .replace(/°/g, "")
     // apici/virgolette “smart”
-    .replace(/[’‘]/g, "'")
-    .replace(/[“”]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
     // unità/simboli che rompono WinAnsi in jsPDF
     .replace(/\u00B5/g, "u")       // µ -> u (così "um")
-    .replace(/µ/g, "u")            // fallback
+    .replace(/µ/g, "u")
     .replace(/\u03A9/g, "Ohm")     // Ω -> Ohm
-    // NBSP e spazi strani
+    // spazi strani
     .replace(/\u00A0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Patch globale jsPDF: TUTTE le doc.text passano da pdfSafe (NO ricorsione)
 function patchJsPdfText(doc){
   if(!doc || doc.__viv_patched_text) return;
   const __origText = doc.text.bind(doc);
   doc.text = function(text, x, y, options, transform){
-    if (Array.isArray(text)) text = text.map(pdfSafe);
+    if(Array.isArray(text)) text = text.map(pdfSafe);
     else text = pdfSafe(text);
     return __origText(text, x, y, options, transform);
   };
   doc.__viv_patched_text = true;
-}
-
-function pdfDocText(doc, txt, x, y, opts){
-  const safe = Array.isArray(txt) ? txt.map(pdfSafe) : pdfSafe(txt);
-  return (opts === undefined) ? doc.text(safe, x, y) : doc.text(safe, x, y, opts);
 }
 
 function certFilename(prefix, code, lotto){
@@ -1092,12 +1079,12 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  pdfDocText(doc, "VIVCOLOR S.R.L.", margin + 52, y0 + 5);
+  doc.text("VIVCOLOR S.R.L.", margin + 52, y0 + 5);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  pdfDocText(doc, "Laboratorio Ricerca & Sviluppo", margin + 52, y0 + 10);
-  pdfDocText(doc, "Certificazione di Controllo Qualità", margin + 52, y0 + 15);
+  doc.text("Laboratorio Ricerca & Sviluppo", margin + 52, y0 + 10);
+  doc.text("Certificazione di Controllo Qualità", margin + 52, y0 + 15);
 
   doc.setDrawColor(231,231,231);
   doc.line(margin, y0 + 20, pageW - margin, y0 + 20);
@@ -1105,29 +1092,29 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
   const pLineY = y0 + 30;
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Prodotto:", margin, pLineY);
+  doc.text("Prodotto:", margin, pLineY);
   doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(product?.name), margin + 22, pLineY);
+  doc.text(pdfSafe(product?.name), margin + 22, pLineY);
 
   doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Codice:", margin, pLineY + 6);
+  doc.text("Codice:", margin, pLineY + 6);
   doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(product?.code), margin + 22, pLineY + 6);
+  doc.text(pdfSafe(product?.code), margin + 22, pLineY + 6);
 
   doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Lotto:", margin, pLineY + 12);
+  doc.text("Lotto:", margin, pLineY + 12);
   doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(check?.lotto), margin + 22, pLineY + 12);
+  doc.text(pdfSafe(check?.lotto), margin + 22, pLineY + 12);
 
   doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Data controllo:", margin, pLineY + 18);
+  doc.text("Data controllo:", margin, pLineY + 18);
   doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(fmtDateTime(check?.dateISO)), margin + 30, pLineY + 18);
+  doc.text(pdfSafe(fmtDateTime(check?.dateISO)), margin + 30, pLineY + 18);
 
   doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Operatore:", margin, pLineY + 24);
+  doc.text("Operatore:", margin, pLineY + 24);
   doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(check?.meta?.effettuatoDa), margin + 25, pLineY + 24);
+  doc.text(pdfSafe(check?.meta?.effettuatoDa), margin + 25, pLineY + 24);
 
   doc.setDrawColor(231,231,231);
   doc.line(margin, pLineY + 30, pageW - margin, pLineY + 30);
@@ -1136,13 +1123,13 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
 
   function writePara(txt){
     const lines = doc.splitTextToSize(txt, pageW - margin*2);
-    pdfDocText(doc, lines, margin, y);
+    doc.text(lines, margin, y);
     y += lines.length * 4.8 + 3;
   }
 
   if(kind === "deltae"){
     doc.setFont("helvetica","bold"); doc.setFontSize(13);
-    pdfDocText(doc, "CERTIFICAZIONE DI CONTROLLO COLORE (DE)", margin, y); y += 8;
+    doc.text("CERTIFICAZIONE DI CONTROLLO COLORE (DE)", margin, y); y += 8;
 
     doc.setFont("helvetica","normal"); doc.setFontSize(10);
 
@@ -1153,20 +1140,20 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
     writePara("Il valore di DE rilevato, che rappresenta lo scostamento cromatico del campione analizzato rispetto allo standard di riferimento, risulta pari a:");
 
     doc.setFont("helvetica","bold");
-    pdfDocText(doc, `DE rilevato: ${result?.value ?? ""}`, margin, y); y += 8;
+    doc.text(`DE rilevato: ${result?.value ?? ""}`, margin, y); y += 8;
 
     doc.setFont("helvetica","normal");
     writePara("Il controllo è da considerarsi conforme qualora il valore di DE rilevato risulti uguale o inferiore al limite di accettazione previsto, definito in funzione delle specifiche di prodotto e/o delle richieste del cliente:");
 
     doc.setFont("helvetica","bold");
-    pdfDocText(doc, `Limite di accettazione DE: ${specLabel ?? ""}`, margin, y); y += 8;
+    doc.text(`Limite di accettazione DE: ${specLabel ?? ""}`, margin, y); y += 8;
 
     doc.setFont("helvetica","normal");
     writePara("Eventuale documentazione strumentale, report di misura o materiale di supporto allegati costituiscono parte integrante della presente certificazione.");
 
   } else if(kind === "resa"){
     doc.setFont("helvetica","bold"); doc.setFontSize(13);
-    pdfDocText(doc, "CERTIFICAZIONE DI CONTROLLO RESA (%)", margin, y); y += 8;
+    doc.text("CERTIFICAZIONE DI CONTROLLO RESA (%)", margin, y); y += 8;
 
     doc.setFont("helvetica","normal"); doc.setFontSize(10);
 
@@ -1174,25 +1161,25 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
     writePara("Il controllo è stato effettuato dal Laboratorio VivColor secondo procedure interne del laboratorio, applicabili esclusivamente alle paste coloranti.");
     writePara("Il valore di resa percentuale rappresenta il rendimento del prodotto rispetto allo standard di riferimento, determinato in base alle condizioni di prova definite.");
 
-    doc.setFont("helvetica","bold"); pdfDocText(doc, "Procedura di prova (sintesi)", margin, y); y += 6;
+    doc.setFont("helvetica","bold"); doc.text("Procedura di prova (sintesi)", margin, y); y += 6;
     doc.setFont("helvetica","normal");
     writePara("La prova di resa viene eseguita mediante preparazione di una miscela a peso noto costituita da convertitore e paste, secondo rapporti percentuali prestabiliti.");
     writePara("Le quantità dei componenti vengono pesate con elevata precisione e registrate per garantire la tracciabilità della prova. La miscela ottenuta viene omogeneizzata, successivamente diluita in funzione delle condizioni ambientali e applicata a spruzzo su supporto idoneo fino a copertura completa.");
 
-    doc.setFont("helvetica","bold"); pdfDocText(doc, "Misurazione", margin, y); y += 6;
+    doc.setFont("helvetica","bold"); doc.text("Misurazione", margin, y); y += 6;
     doc.setFont("helvetica","normal");
     writePara("La valutazione della resa percentuale è effettuata utilizzando spettrofotometro YS6020.");
     writePara("Strumento di misura: Spettrofotometro YS6020 – Codice interno LAB.29");
 
-    doc.setFont("helvetica","bold"); pdfDocText(doc, "Risultati", margin, y); y += 6;
+    doc.setFont("helvetica","bold"); doc.text("Risultati", margin, y); y += 6;
     doc.setFont("helvetica","bold");
-    pdfDocText(doc, `Resa (%) rilevata: ${result?.value ?? ""}`, margin, y); y += 8;
+    doc.text(`Resa (%) rilevata: ${result?.value ?? ""}`, margin, y); y += 8;
 
     doc.setFont("helvetica","normal");
     writePara("Il controllo è da considerarsi conforme qualora il valore rilevato rientri nel seguente intervallo di accettazione:");
 
     doc.setFont("helvetica","bold");
-    pdfDocText(doc, `Intervallo di accettazione (Standard): ${specLabel ?? ""}`, margin, y); y += 8;
+    doc.text(`Intervallo di accettazione (Standard): ${specLabel ?? ""}`, margin, y); y += 8;
 
     doc.setFont("helvetica","normal");
     writePara("Eventuale documentazione tecnica o report di prova allegati costituiscono parte integrante della presente certificazione.");
@@ -1204,14 +1191,14 @@ async function buildCertificatePdfBytes({ kind, product, check, result, specLabe
   y += 10;
 
   doc.setFont("helvetica","normal");
-  pdfDocText(doc, "Firma operatore controllo:", margin, y);
+  doc.text("Firma operatore controllo:", margin, y);
   doc.setFont("helvetica","bold");
-  pdfDocText(doc, pdfSafe(check?.meta?.effettuatoDa), margin + 48, y);
+  doc.text(pdfSafe(check?.meta?.effettuatoDa), margin + 48, y);
   y += 6;
 
   doc.setFont("helvetica","normal");
-  pdfDocText(doc, "Data:", margin, y);
-  pdfDocText(doc, pdfSafe(fmtDateTime(check?.dateISO)), margin + 12, y);
+  doc.text("Data:", margin, y);
+  doc.text(pdfSafe(fmtDateTime(check?.dateISO)), margin + 12, y);
 
   return doc.output("arraybuffer");
 }
@@ -1275,257 +1262,227 @@ async function fetchImageDataUrl(url){
   const res = await fetch(url, { cache: "force-cache" });
   if(!res.ok) throw new Error("Immagine non trovata: " + url);
   const blob = await res.blob();
-  const dataUrl = await new Promise((resolve, rejeasync function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate, includeNotes }){
+  const dataUrl = await new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onload = ()=> resolve(String(fr.result||""));
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+  // ricava dimensioni
+  const dims = await new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=> resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+  const out = { dataUrl, w: dims.w, h: dims.h, format: (blob.type||"").includes("png") ? "PNG" : "JPEG" };
+  __imgCache.set(url, out);
+  return out;
+}
+
+async function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate, includeNotes }){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:"mm", format:"a4" });
 
-  // ✅ FONDAMENTALE: patch globale (evita "- -> !'" anche quando ci sono µ, °, ecc.)
   patchJsPdfText(doc);
 
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-
-  // margini contenuto
   const margin = 12;
-  const contentW = pageW - margin * 2;
 
-  // ✅ margini laterali immagini intestazione/piede ~3 cm
-  const imgSideMargin = 30; // mm (3 cm)
-  const imgW = pageW - imgSideMargin * 2;
+  // Header/Footer full-bleed
+  let headerH = 0;
+  let footerH = 0;
 
-  // immagini header/footer (proporzioni)
-  const header = await fetchImageDataUrl(COA_HEADER_URL);
-  const footer = await fetchImageDataUrl(COA_FOOTER_URL);
-
-  const headerH = (imgW * header.h) / header.w;
-  const footerH = (imgW * footer.h) / footer.w;
-
-  const headerX = imgSideMargin;
-  const headerY = 0;
-  const footerX = imgSideMargin;
-  const footerY = pageH - footerH;
-
-  try { doc.addImage(header.dataUrl, header.format, headerX, headerY, imgW, headerH); } catch(e){ console.warn("Header img:", e); }
-  try { doc.addImage(footer.dataUrl, footer.format, footerX, footerY, imgW, footerH); } catch(e){ console.warn("Footer img:", e); }
-
-  const topSafe = headerH + 12;
-  const bottomSafe = footerY - 12;
-  let y = topSafe;
-
-  // Titolo
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  pdfDocText(doc, "CERTIFICATO DI ANALISI", margin, y);
-  y += 10;
-
-  // Dati prodotto/controllo
-  doc.setFontSize(10);
-
-  doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Prodotto:", margin, y);
-  doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(product?.name || ""), margin + 24, y);
-  y += 6;
-
-  doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Codice prodotto:", margin, y);
-  doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(product?.code || ""), margin + 34, y);
-  y += 6;
-
-  doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Data controllo:", margin, y);
-  doc.setFont("helvetica", "normal");
-  pdfDocText(doc, fmtDateOnly(check?.dateISO), margin + 30, y);
-  y += 6;
-
-  doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Data scadenza:", margin, y);
-  doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(expiryDate || ""), margin + 30, y);
-  y += 6;
-
-  doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Lotto:", margin, y);
-  doc.setFont("helvetica", "normal");
-  pdfDocText(doc, pdfSafe(check?.lotto || ""), margin + 16, y);
-  y += 10;
-
-  doc.setDrawColor(220,220,220);
-  doc.line(margin, y, pageW - margin, y);
-  y += 10;
-
-  // Sezione risultati
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  pdfDocText(doc, "Risultati delle prove", margin, y);
-  y += 8;
-
-  // Tabella
-  const col1 = margin;
-  const col2 = margin + 62;
-  const col3 = margin + 116;
-  const col4 = margin + 160;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-  pdfDocText(doc, "Parametro", col1, y);
-  pdfDocText(doc, "Valore",    col2, y);
-  pdfDocText(doc, "STD",       col3, y);
-  pdfDocText(doc, "UM",        col4, y);
-  y += 5;
-
-  doc.setDrawColor(220,220,220);
-  doc.line(margin, y, pageW - margin, y);
-  y += 6;
-
-  doc.setFont("helvetica", "normal");
-
-  function fmtStd(spec, type){
-    if(!spec) return "";
-    const min = spec.min;
-    const max = spec.max;
-
-    if(type === "num_max" && max !== null && max !== undefined && String(max) !== ""){
-      return `max ${max}`;
+  async function drawHeaderFooter(){
+    try{
+      const hImg = await fetchImageDataUrl(COA_HEADER_URL);
+      const sidePad = 30; // mm (~3 cm)
+      const imgW = pageW - sidePad*2;
+      headerH = (hImg.h / hImg.w) * imgW;
+      doc.addImage(hImg.dataUrl, hImg.format, sidePad, 0, imgW, headerH);
+    }catch(err){
+      console.warn("Header non caricato:", err);
+      headerH = 0;
     }
-    if(type === "num_min" && min !== null && min !== undefined && String(min) !== ""){
-      return `min ${min}`;
+
+    try{
+      const fImg = await fetchImageDataUrl(COA_FOOTER_URL);
+      const sidePad = 30; // mm (~3 cm)
+      const imgW = pageW - sidePad*2;
+      footerH = (fImg.h / fImg.w) * imgW;
+      doc.addImage(fImg.dataUrl, fImg.format, sidePad, pageH - footerH, imgW, footerH);
+    }catch(err){
+      console.warn("Footer non caricato:", err);
+      footerH = 0;
     }
-    if(min !== null && min !== undefined && String(min) !== "" && max !== null && max !== undefined && String(max) !== ""){
-      return `${min} - ${max}`;
-    }
-    if(min !== null && min !== undefined && String(min) !== ""){
-      return `min ${min}`;
-    }
-    if(max !== null && max !== undefined && String(max) !== ""){
-      return `max ${max}`;
-    }
-    return "";
   }
 
-  const defsByKey = new Map((window.DEFAULT_CONTROLS || DEFAULT_CONTROLS || []).map(d => [d.key, d]));
-  const results = check?.results || check?.data || check?.values || check?.checks || {};
+  await drawHeaderFooter();
 
-  for(const k of (selectedKeys || [])){
-    const def = defsByKey.get(k);
-    if(!def) continue;
-
-    const res = results[k] ?? {};
-    let value = (typeof res === "object" && res !== null && "value" in res) ? res.value : res;
-    if(value === null || value === undefined) value = "";
-
-    const std = fmtStd(def.spec, def.type);
-    const um = def.unit || "";
-
-    if(y > bottomSafe - 30){
+  function ensureSpace(hNeeded){
+    const yLimit = pageH - footerH - margin;
+    if(y + hNeeded > yLimit){
       doc.addPage();
-      patchJsPdfText(doc);
-      try { doc.addImage(header.dataUrl, header.format, headerX, headerY, imgW, headerH); } catch(_){}
-      try { doc.addImage(footer.dataUrl, footer.format, footerX, footerY, imgW, footerH); } catch(_){}
-      y = topSafe;
-
-      doc.setFont("helvetica","bold");
-      doc.setFontSize(12);
-      pdfDocText(doc, "Risultati delle prove (continua)", margin, y);
-      y += 8;
-
-      doc.setFontSize(10);
-      doc.setFont("helvetica","bold");
-      pdfDocText(doc, "Parametro", col1, y);
-      pdfDocText(doc, "Valore",    col2, y);
-      pdfDocText(doc, "STD",       col3, y);
-      pdfDocText(doc, "UM",        col4, y);
-      y += 5;
-      doc.setDrawColor(220,220,220);
-      doc.line(margin, y, pageW - margin, y);
-      y += 6;
-      doc.setFont("helvetica","normal");
-    }
-
-    pdfDocText(doc, def.name, col1, y);
-    pdfDocText(doc, String(value), col2, y);
-    pdfDocText(doc, std, col3, y);
-    pdfDocText(doc, um, col4, y);
-    y += 6;
-  }
-
-  // Note opzionali
-  if(includeNotes){
-    const notes = check?.meta?.note ?? check?.meta?.notes ?? check?.note ?? "";
-    const safeNotes = pdfSafe(notes);
-    if(safeNotes){
-      y += 10;
-      if(y > bottomSafe - 35){
-        doc.addPage();
-        patchJsPdfText(doc);
-        try { doc.addImage(header.dataUrl, header.format, headerX, headerY, imgW, headerH); } catch(_){}
-        try { doc.addImage(footer.dataUrl, footer.format, footerX, footerY, imgW, footerH); } catch(_){}
-        y = topSafe;
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      pdfDocText(doc, "Note", margin, y);
-      y += 6;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(safeNotes, contentW);
-      pdfDocText(doc, lines, margin, y);
-      y += lines.length * 4.8 + 6;
+      // ridisegna header/footer su nuova pagina
+      // (nota: bisogna ricalcolare pageH/pageW non serve, A4 fisso)
+      // eslint-disable-next-line no-use-before-define
+      y = margin + headerH + 4;
+      // draw again
+      // (non await qui: immagini già in cache, ma funzione è sync -> facciamo addImage direttamente)
+      try{
+        const hImg = __imgCache.get(COA_HEADER_URL);
+        if(hImg){
+          doc.addImage(hImg.dataUrl, hImg.format, 30, 0, pageW-60, headerH);
+        }
+      }catch(_){}
+      try{
+        const fImg = __imgCache.get(COA_FOOTER_URL);
+        if(fImg){
+          doc.addImage(fImg.dataUrl, fImg.format, 30, pageH - footerH, pageW-60, footerH);
+        }
+      }catch(_){}
     }
   }
 
-  // Dichiarazione
-  y += 12;
-  if(y > bottomSafe - 45){
-    doc.addPage();
-    patchJsPdfText(doc);
-    try { doc.addImage(header.dataUrl, header.format, headerX, headerY, imgW, headerH); } catch(_){}
-    try { doc.addImage(footer.dataUrl, footer.format, footerX, footerY, imgW, footerH); } catch(_){}
-    y = topSafe;
-  }
-
-  doc.setDrawColor(220,220,220);
-  doc.line(margin, y, pageW - margin, y);
-  y += 10;
+  // Start content
+  let y = margin + headerH + 4;
 
   doc.setFont("helvetica","bold");
-  doc.setFontSize(12);
-  pdfDocText(doc, "Dichiarazione di conformita", margin, y);
-  y += 7;
+  doc.setFontSize(14);
+  doc.text("CERTIFICATO DI ANALISI", margin, y);
+  y += 8;
 
   doc.setFont("helvetica","normal");
   doc.setFontSize(10);
-  const decl =
-    "Il presente certificato di analisi attesta che il prodotto sopra indicato e' stato sottoposto ai controlli selezionati secondo le procedure interne del Laboratorio VivColor. " +
-    "I risultati ottenuti risultano conformi alle specifiche previste.";
-  const declLines = doc.splitTextToSize(pdfSafe(decl), contentW);
-  pdfDocText(doc, declLines, margin, y);
-  y += declLines.length * 4.8 + 12;
 
-  doc.setFont("helvetica","bold");
-  pdfDocText(doc, "Il Responsabile del Laboratorio", margin, y);
+  const controlDateOnly = fmtDateOnly(check?.dateISO);
+  const expiryLabel = expiryDate ? fmtDateOnly(expiryDate) : "";
+
+  // Dati prodotto/controllo
+  const info = [
+    ["Nome prodotto", product?.name ?? ""],
+    ["Codice prodotto", product?.code ?? ""],
+    ["Data controllo", controlDateOnly],
+    ["Data scadenza", expiryLabel],
+    ["Lotto", check?.lotto ?? ""],
+  ];
+
+  const boxW = pageW - margin*2;
+  const rowH = 6;
+
+  // box
+  doc.setDrawColor(220);
+  doc.rect(margin, y, boxW, info.length*rowH + 6);
+  y += 4;
+
+  for(const [k,v] of info){
+    doc.setFont("helvetica","bold"); doc.text(String(k)+":", margin+3, y+4);
+    doc.setFont("helvetica","normal"); doc.text(pdfSafe(v), margin+35, y+4, { maxWidth: boxW-40 });
+    y += rowH;
+  }
   y += 6;
-  pdfDocText(doc, "Tiziano Donini", margin, y);
 
-  return doc.output("arraybuffer");
-}
-cifiche applicabili alla data del controllo.",
+  // Tabella parametri
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(11);
+  doc.text("Risultati delle prove", margin, y);
+  y += 10;
+
+  const cols = [
+    { label:"Parametro", w: (boxW*0.46) },
+    { label:"Valore",    w: (boxW*0.18) },
+    { label:"STD",       w: (boxW*0.22) },
+    { label:"UM",        w: (boxW*0.14) },
+  ];
+
+  function drawTableHeader(){
+    doc.setFillColor(245,245,245);
+    doc.setDrawColor(220);
+    doc.setTextColor(0);
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(10);
+
+    let x = margin;
+    const h = 7;
+    doc.rect(x, y, boxW, h, "F");
+    for(const c of cols){
+      doc.rect(x, y, c.w, h);
+      doc.text(c.label, x+2, y+5);
+      x += c.w;
+    }
+    y += h;
+  }
+
+  function drawRow(cells){
+    doc.setFont("helvetica","normal");
+    doc.setFontSize(10);
+    doc.setDrawColor(220);
+
+    // calcola righe wrap per "Parametro"
+    const paramLines = doc.splitTextToSize(String(cells[0] ?? ""), cols[0].w - 4);
+    const maxLines = Math.max(1, paramLines.length);
+    const h = 6 + (maxLines-1)*4;
+
+    ensureSpace(h + 10);
+
+    let x = margin;
+    // cell 0
+    doc.rect(x, y, cols[0].w, h);
+    doc.text(paramLines, x+2, y+4);
+    x += cols[0].w;
+
+    // altre celle
+    for(let i=1;i<cols.length;i++){
+      doc.rect(x, y, cols[i].w, h);
+      const txt = pdfSafe(cells[i] ?? "");
+      doc.text(txt, x+2, y+4, { maxWidth: cols[i].w - 4 });
+      x += cols[i].w;
+    }
+    y += h;
+  }
+
+  drawTableHeader();
+
+  const results = (check?.results || []).filter(r => selectedKeys.includes(r.key));
+  if(results.length === 0){
+    drawRow(["-", "-", "-", "-"]);
+  } else {
+    for(const r of results){
+      const std = r.specText ?? "";
+      const value = (r.value===null || r.value===undefined || r.value==="") ? "" : String(r.value);
+      drawRow([ r.name ?? r.key, value, std, r.unit ?? "" ]);
+    }
+  }
+
+  y += 8;
+  ensureSpace(50);
+
+  // Dichiarazione ISO9001 + firma
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(11);
+  doc.text("Dichiarazione di conformità", margin, y);
+  y += 10;
+
+  doc.setFont("helvetica","normal");
+  doc.setFontSize(10);
+
+  const decl = [
+    "Il Laboratorio VivColor S.r.l. dichiara che i risultati riportati nel presente certificato si riferiscono esclusivamente al campione analizzato e alle condizioni di prova adottate.",
+    "Per i parametri inclusi nel presente documento, il prodotto risulta conforme alle specifiche applicabili alla data del controllo.",
     "Il presente certificato di analisi non può essere riprodotto parzialmente senza autorizzazione scritta del Laboratorio."
   ].join(" ");
 
   const declLines = doc.splitTextToSize(decl, boxW);
-  pdfDocText(doc, declLines, margin, y);
+  doc.text(declLines, margin, y);
   y += declLines.length * 4.6 + 10;
 
   doc.setFont("helvetica","bold");
-  pdfDocText(doc, "Il Responsabile del Laboratorio", margin, y);
+  doc.text("Il Responsabile del Laboratorio", margin, y);
   y += 10;
 
   doc.setFont("helvetica","bold");
-  pdfDocText(doc, "Tiziano Donini", margin, y);
+  doc.text("Tiziano Donini", margin, y);
 
   return doc.output("arraybuffer");
 }
@@ -1716,18 +1673,17 @@ function hasSpecToRequest(c){
 }
 function specText(c){
   if(c.type==="num_max"){
-    return c.spec?.max==null ? "" : `max ${c.spec.max}`;
+    return c.spec?.max==null ? "" : `≤ ${c.spec.max}`;
   }
   if(c.type==="num_minmax"){
     const mn=c.spec?.min, mx=c.spec?.max;
     if(mn==null && mx==null) return "";
-    if(mn!=null && mx!=null) return `${mn} - ${mx}`;
-    if(mn!=null) return `min ${mn}`;
-    return `max ${mx}`;
+    if(mn!=null && mx!=null) return `${mn} → ${mx}`;
+    if(mn!=null) return `≥ ${mn}`;
+    return `≤ ${mx}`;
   }
   return "";
 }
-
 function evaluateValueAgainstSpec(c, v){
   if(c.type==="num_max"){
     if(c.spec?.max==null) return true;
@@ -2737,11 +2693,11 @@ async function generateCoAPdf(){
   const expiryEl = document.getElementById("coaExpiry");
   const expiry = (expiryEl.value || "").trim(); // YYYY-MM-DD
 
-  const includeNotes = !!document.getElementById("coaIncludeNotes")?.checked;
-
   const checked = Array.from(document.querySelectorAll('#coaParams input[type="checkbox"][data-coa-k]'))
     .filter(x=>x.checked)
     .map(x=>x.getAttribute("data-coa-k"));
+
+  const includeNotes = !!document.getElementById("coaIncludeNotes")?.checked;
 
   const bytes = await buildCoAPdfBytes({
     product: cachedProduct,
