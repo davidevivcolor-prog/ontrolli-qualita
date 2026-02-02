@@ -1735,6 +1735,7 @@ async function findChecksByLotto(lotto){
   return list;
 }
 function buildControlsDisplayOrder(product){
+  // Ordine fisso + eventuali controlli custom (attivi) non presenti nell'ordine base
   const keys = [...CHECK_ENTRY_ORDER];
   const rest = (product.controls||[])
     .filter(c=>c.enabled && !keys.includes(c.key))
@@ -2826,14 +2827,27 @@ async function makeBackup(){
   return { version: 6, createdAtISO: new Date().toISOString(), products, checks };
 }
 async function restoreBackup(obj){
-  if(!obj || !Array.isArray(obj.products) || !Array.isArray(obj.checks)){
-    throw new Error("Formato backup non valido.");
+  // Supporta anche backup "vecchi" senza checks
+  if(!obj || !Array.isArray(obj.products)){
+    throw new Error("Formato backup non valido: manca 'products'.");
   }
-  const t=tx([STORES.products,STORES.checks],"readwrite");
-  await new Promise((res,rej)=>{ const r=t.objectStore(STORES.products).clear(); r.onsuccess=res; r.onerror=()=>rej(r.error); });
-  await new Promise((res,rej)=>{ const r=t.objectStore(STORES.checks).clear(); r.onsuccess=res; r.onerror=()=>rej(r.error); });
-  for(const p of obj.products) await put(t.objectStore(STORES.products), p);
-  for(const c of obj.checks) await put(t.objectStore(STORES.checks), c);
+  const checks = Array.isArray(obj.checks) ? obj.checks : [];
+
+  // Svuota il DB CLOUD (Firestore), poi reinserisce
+  await wipeAllFirestore();
+
+  const t = tx([STORES.products, STORES.checks], "readwrite");
+
+  for(const p of obj.products){
+    if(!p || !p.code) continue;
+    await put(t.objectStore(STORES.products), p);
+  }
+  for(const c of checks){
+    // Ogni check deve avere un id (document id). Se manca, lo rigenero.
+    if(!c) continue;
+    if(!c.id) c.id = uuid();
+    await put(t.objectStore(STORES.checks), c);
+  }
 }
 
 /* =========================
