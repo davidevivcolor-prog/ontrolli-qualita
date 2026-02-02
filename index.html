@@ -834,6 +834,12 @@
 </div>
 
 <script>
+
+// Safe binder: non crasha se l\'elemento non esiste (UI a viste dinamiche)
+function on(id, evt, fn){
+  const el = document.getElementById(id);
+  if(el) el.addEventListener(evt, fn);
+}
 // Shim for libraries that expect Node-style process/env
 window.process = window.process || { env: { NODE_ENV: "production" } };
 window.global = window.global || window;
@@ -2964,17 +2970,17 @@ async function restoreBackup(obj){
 /* =========================
    Handlers
 ========================= */
-document.getElementById("codeInput").addEventListener("input", (e)=>{
+on("codeInput","input",(e)=>{
   e.target.value = e.target.value.toUpperCase();
 });
 
-document.getElementById("openBtn").addEventListener("click", async ()=>{
+on("openBtn","click",async ()=>{
   const code = normalizeCode(document.getElementById("codeInput").value);
   if(!code) return alert("Inserisci un codice.");
   await loadProduct(code);
 });
 
-document.getElementById("homeBtn").addEventListener("click", async ()=>{
+on("homeBtn","click",async ()=>{
   currentCode=null;
   cachedProduct=null;
   document.getElementById("codeInput").value = "";
@@ -2983,74 +2989,48 @@ document.getElementById("homeBtn").addEventListener("click", async ()=>{
   await renderHomeRecentProducts();
 });
 
-document.getElementById("allProductsBtn").addEventListener("click", async ()=>{
+on("allProductsBtn","click",async ()=>{
   await renderAllProducts();
   showView("allProducts");
 });
 
-document.getElementById("backFromAllProductsBtn").addEventListener("click", async ()=>{
+on("backFromAllProductsBtn","click",async ()=>{
   showView("home");
   await renderHomeRecentProducts();
 });
 
-document.getElementById("cancelNewProdBtn").addEventListener("click", ()=> showView("home"));
-document.getElementById("saveNewProdBtn").addEventListener("click", saveNewProduct);
+on("cancelNewProdBtn","click",()=> showView("home"));
+on("saveNewProdBtn","click",saveNewProduct);
 
-document.getElementById("editSetupBtn").addEventListener("click", openSetup);
-document.getElementById("setupBackBtn").addEventListener("click", async ()=> loadProduct(currentCode));
-document.getElementById("setupSaveBtn").addEventListener("click", saveSetup);
+on("editSetupBtn","click",openSetup);
+on("setupBackBtn","click",async ()=> loadProduct(currentCode));
+on("setupSaveBtn","click",saveSetup);
 
-document.getElementById("addCustomControlBtnNew").addEventListener("click", ()=> addCustomControl("new"));
-document.getElementById("addCustomControlBtnEdit").addEventListener("click", ()=> addCustomControl("edit"));
+on("addCustomControlBtnNew","click",()=> addCustomControl("new"));
+on("addCustomControlBtnEdit","click",()=> addCustomControl("edit"));
 
-const newCheckBtn = document.getElementById("newCheckBtn");
-if (newCheckBtn) {
-  newCheckBtn.addEventListener("click", startNewCheck);
-}
+on("newCheckBtn","click",startNewCheck);
+on("operatorsBtn","click",()=>{ renderOperatorsList(); showView("operators"); });
+on("operatorsBackBtn","click",()=> showView("home"));
+on("saveOperatorBtn","click",()=>{
+  const role = (document.getElementById("operatorRole").value||"").trim();
+  const name = (document.getElementById("opName").value||"").trim();
+  const surname = (document.getElementById("opSurname").value||"").trim();
+  const code = (document.getElementById("opCode").value||"").trim();
+  if(!role || !name || !surname || !code) return alert("Compila ruolo, nome, cognome e sigla.");
+  const list = loadOperators();
+  const formatted = formatOperator({role,name,surname,code});
+  const exists = list.some(o=> formatOperator(o)===formatted);
+  if(exists) return alert("Operatore già presente.");
+  list.push({ role, name, surname, code });
+  saveOperators(list);
+  renderOperatorsList();
+  alert("Operatore salvato ✅");
+});
+on("cancelCheckBtn","click",async ()=> loadProduct(currentCode));
+on("saveCheckBtn","click",saveCheck);
 
-const operatorsBtn = document.getElementById("operatorsBtn");
-if (operatorsBtn) {
-  operatorsBtn.addEventListener("click", ()=>{
-    renderOperatorsScreen();
-    showView("operators");
-  });
-}
-
-const operatorsBackBtn = document.getElementById("operatorsBackBtn");
-if (operatorsBackBtn) {
-  operatorsBackBtn.addEventListener("click", ()=> showView("home"));
-}
-
-const saveOperatorBtn = document.getElementById("saveOperatorBtn");
-if (saveOperatorBtn) {
-  saveOperatorBtn.addEventListener("click", ()=>{
-    const role = (document.getElementById("operatorRole")?.value || "").trim();
-    const name = (document.getElementById("opName")?.value || "").trim();
-    const surname = (document.getElementById("opSurname")?.value || "").trim();
-    const code = (document.getElementById("opCode")?.value || "").trim();
-
-    if(!role || !name || !surname || !code){
-      alert("Compila ruolo, nome, cognome e sigla.");
-      return;
-    }
-
-    try{
-      upsertOperator(
-        role === "produzione" ? "prod" : "qc",
-        { nome: name, cognome: surname, sigla: code }
-      );
-      renderOperatorsScreen();
-      alert("Operatore salvato ✅");
-    }catch(e){
-      alert(e.message || String(e));
-    }
-  });
-}
-
-document.getElementById("cancelCheckBtn").addEventListener("click", async ()=> loadProduct(currentCode));
-document.getElementById("saveCheckBtn").addEventListener("click", saveCheck);
-
-document.getElementById("historyBtn").addEventListener("click", async ()=>{
+on("historyBtn","click",async ()=>{
   if(!cachedProduct) return;
   document.getElementById("histTitle").textContent = `${cachedProduct.code} — ${cachedProduct.name}`;
   document.getElementById("filterOutcome").value = "all";
@@ -3059,35 +3039,35 @@ document.getElementById("historyBtn").addEventListener("click", async ()=>{
   await renderHistory();
   showView("history");
 });
-document.getElementById("backToProdBtn").addEventListener("click", async ()=> loadProduct(currentCode));
-document.getElementById("filterOutcome").addEventListener("change", renderHistory);
-document.getElementById("filterFrom").addEventListener("change", renderHistory);
-document.getElementById("filterTo").addEventListener("change", renderHistory);
+on("backToProdBtn","click",async ()=> loadProduct(currentCode));
+on("filterOutcome","change",renderHistory);
+on("filterFrom","change",renderHistory);
+on("filterTo","change",renderHistory);
 
-document.getElementById("detailBackBtn").addEventListener("click", async ()=>{
+on("detailBackBtn","click",async ()=>{
   if(lastReturnView === "history"){
     showView("history");
   } else {
     await loadProduct(currentCode);
   }
 });
-document.getElementById("detailSaveBtn").addEventListener("click", saveDetail);
+on("detailSaveBtn","click",saveDetail);
 
-document.getElementById("detailCoABtn").addEventListener("click", ()=>{
+on("detailCoABtn","click",()=>{
   openCoAModal();
 });
 
-document.getElementById("coaCloseBtn").addEventListener("click", closeCoAModal);
-document.getElementById("coaOverlay").addEventListener("click", (e)=>{
+on("coaCloseBtn","click",closeCoAModal);
+on("coaOverlay","click",(e)=>{
   if(e.target && e.target.id === "coaOverlay") closeCoAModal();
 });
-document.getElementById("coaAllBtn").addEventListener("click", ()=>{
+on("coaAllBtn","click",()=>{
   document.querySelectorAll('#coaParams input[type="checkbox"][data-coa-k]').forEach(cb=>cb.checked=true);
 });
-document.getElementById("coaNoneBtn").addEventListener("click", ()=>{
+on("coaNoneBtn","click",()=>{
   document.querySelectorAll('#coaParams input[type="checkbox"][data-coa-k]').forEach(cb=>cb.checked=false);
 });
-document.getElementById("coaGenerateBtn").addEventListener("click", async ()=>{
+on("coaGenerateBtn","click",async ()=>{
   try{
     await generateCoAPdf();
     closeCoAModal();
@@ -3097,16 +3077,16 @@ document.getElementById("coaGenerateBtn").addEventListener("click", async ()=>{
   }
 });
 
-document.getElementById("exportHistCsvBtn").addEventListener("click", async ()=>{
+on("exportHistCsvBtn","click",async ()=>{
   const checks = await getChecks(currentCode);
   await exportChecksCSV(checks, `storico_${currentCode}.csv`);
 });
-document.getElementById("exportProdCsvBtnLeft").addEventListener("click", async ()=>{
+on("exportProdCsvBtnLeft","click",async ()=>{
   if(!cachedProduct) return alert("Apri prima un prodotto.");
   const checks = await getChecks(currentCode);
   await exportChecksCSV(checks, `storico_${currentCode}.csv`);
 });
-document.getElementById("exportAllCsvBtn").addEventListener("click", async ()=>{
+on("exportAllCsvBtn","click",async ()=>{
   if(!cachedProduct) return alert("Apri prima un prodotto (serve per colonne e ordine).");
   const t = tx([STORES.checks]);
   const all = await getAll(t.objectStore(STORES.checks));
@@ -3114,12 +3094,12 @@ document.getElementById("exportAllCsvBtn").addEventListener("click", async ()=>{
   await exportChecksCSV(all, `storico_TUTTO.csv`);
 });
 
-document.getElementById("backupJsonBtn").addEventListener("click", async ()=>{
+on("backupJsonBtn","click",async ()=>{
   const b=await makeBackup();
   downloadText(`backup_qc_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(b,null,2));
 });
-document.getElementById("restoreJsonBtn").addEventListener("click", ()=> document.getElementById("restoreJsonFile").click());
-document.getElementById("restoreJsonFile").addEventListener("change", async (e)=>{
+on("restoreJsonBtn","click",()=> document.getElementById("restoreJsonFile").click());
+on("restoreJsonFile","change",async (e)=>{
   const f=e.target.files?.[0]; if(!f) return;
   const txt=await f.text();
   try{
@@ -3136,7 +3116,7 @@ document.getElementById("restoreJsonFile").addEventListener("change", async (e)=
     e.target.value="";
   }
 });
-document.getElementById("wipeBtn").addEventListener("click", async ()=>{
+on("wipeBtn","click",async ()=>{
   // Doppia conferma + password + ultima conferma
   const c1 = confirm("⚠️ ATTENZIONE: stai per SVUOTARE TUTTO il database cloud. Vuoi continuare?");
   if(!c1) return;
