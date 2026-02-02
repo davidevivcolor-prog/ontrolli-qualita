@@ -342,57 +342,6 @@
         <div class="box"><b id="kpiProducts">0</b><span class="muted">Prodotti</span></div>
         <div class="box"><b id="kpiChecks">0</b><span class="muted">Controlli</span></div>
       </div>
-      <div class="hr"></div>
-
-      <div class="topline">
-        <b>Operatori</b>
-        <span class="tag">Anagrafiche</span>
-      </div>
-      <div class="muted">Gestisci elenco operatori. Serve per suggerimenti e filtri durante i controlli.</div>
-
-      <label>Tipo operatore</label>
-      <select id="opRole">
-        <option value="prod">Chi produce</option>
-        <option value="ctrl">Chi effettua il controllo</option>
-      </select>
-
-      <div class="row2">
-        <div>
-          <label>Nome</label>
-          <input id="opFirst" placeholder="Es. Mario" />
-        </div>
-        <div>
-          <label>Cognome</label>
-          <input id="opLast" placeholder="Es. Rossi" />
-        </div>
-      </div>
-
-      <label>Sigla</label>
-      <input id="opSigla" placeholder="Es. MR / DR / TD..." />
-
-      <div class="btns">
-        <button class="secondary" id="opAddBtn">+ Aggiungi operatore</button>
-        <button id="opReloadBtn">Aggiorna elenco</button>
-      </div>
-
-      <div class="hr"></div>
-
-      <div class="topline">
-        <b>Elenco operatori</b>
-        <span class="tag">Filtro rapido</span>
-      </div>
-
-      <div class="row2">
-        <div>
-          <div class="muted" style="margin-top:6px">Chi produce</div>
-          <div id="opListProd" style="margin-top:8px"></div>
-        </div>
-        <div>
-          <div class="muted" style="margin-top:6px">Chi effettua il controllo</div>
-          <div id="opListCtrl" style="margin-top:8px"></div>
-        </div>
-      </div>
-
     </div>
 
     <!-- RIGHT MAIN -->
@@ -642,13 +591,11 @@
         <div class="row2">
           <div>
             <label>Prodotto da</label>
-            <input id="checkProdottoDa" placeholder="Sigla / cognome" autocomplete="off" />
-            <div id="checkProdottoDaList" style="margin-top:8px"></div>
+            <input id="checkProdottoDa" placeholder="Sigla / cognome" />
           </div>
           <div>
             <label>Effettuato da</label>
-            <input id="checkEffettuatoDa" placeholder="Sigla / cognome" autocomplete="off" />
-            <div id="checkEffettuatoDaList" style="margin-top:8px"></div>
+            <input id="checkEffettuatoDa" placeholder="Sigla / cognome" />
           </div>
         </div>
 
@@ -761,13 +708,11 @@
         <div class="row2">
           <div>
             <label>Prodotto da</label>
-            <input id="detailProdottoDa" autocomplete="off" />
-            <div id="detailProdottoDaList" style="margin-top:8px"></div>
+            <input id="detailProdottoDa" />
           </div>
           <div>
             <label>Effettuato da</label>
-            <input id="detailEffettuatoDa" autocomplete="off" />
-            <div id="detailEffettuatoDaList" style="margin-top:8px"></div>
+            <input id="detailEffettuatoDa" />
           </div>
         </div>
 
@@ -925,9 +870,6 @@ const fs = getFirestore(app);
 const COL_PRODUCTS = "products";
 const COL_CHECKS = "checks";
 
-const COL_OPERATORS = "operators";
-
-
 // Store names (legacy-compatible)
 const STORES = { products: 'products', checks: 'checks' };
 
@@ -939,9 +881,6 @@ let workingControlsEdit = null;
 let detailCheck = null;
 let detailOriginal = null;
 let lastReturnView = 'home';
-
-// Operator registry (cloud)
-let cachedOperators = { prod: [], ctrl: [] };
 
 // Compat layer (keeps most of your code unchanged)
 function tx(storeNames, mode="readonly"){
@@ -1080,147 +1019,6 @@ function fileToBase64(file){
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-
-
-/* =========================
-   Operatori (Anagrafiche)
-========================= */
-function normText(s){ return String(s ?? "").trim().toLowerCase(); }
-function operatorDisplay(op){
-  const sig = String(op.sigla ?? "").trim();
-  const nome = String(op.nome ?? "").trim();
-  const cog = String(op.cognome ?? "").trim();
-  const base = `${cog} ${nome}`.trim();
-  return sig ? `${sig} - ${base}` : base;
-}
-function sortOperators(list){
-  return (list||[]).slice().sort((a,b)=> operatorDisplay(a).localeCompare(operatorDisplay(b), "it"));
-}
-
-async function loadOperators(){
-  try{
-    const snap = await getDocs(collection(fs, COL_OPERATORS));
-    const all = snap.docs.map(d=> ({ id: d.id, ...(d.data()||{}) }));
-    const prod = sortOperators(all.filter(x=>x.role==="prod"));
-    const ctrl = sortOperators(all.filter(x=>x.role==="ctrl"));
-    cachedOperators = { prod, ctrl };
-    renderOperatorLists();
-    refreshOperatorPickers(); // aggiorna suggerimenti nei form aperti
-  } catch(err){
-    console.warn("Errore loadOperators:", err);
-  }
-}
-
-function renderOperatorLists(){
-  const prodBox = document.getElementById("opListProd");
-  const ctrlBox = document.getElementById("opListCtrl");
-  if(!prodBox || !ctrlBox) return;
-
-  function render(list, box){
-    box.innerHTML = "";
-    if(!list || list.length===0){
-      box.innerHTML = `<div class="muted">Nessun operatore.</div>`;
-      return;
-    }
-    for(const op of list){
-      const line = document.createElement("div");
-      line.className = "controlCard";
-      line.style.marginTop = "10px";
-      line.innerHTML = `
-        <div class="topline" style="align-items:center">
-          <div>
-            <div style="font-weight:950">${esc(operatorDisplay(op))}</div>
-            <div class="muted">${esc(op.role==="prod" ? "Chi produce" : "Chi effettua il controllo")}</div>
-          </div>
-          <button class="smallbtn danger" data-opdel="${esc(op.id)}">Elimina</button>
-        </div>
-      `;
-      box.appendChild(line);
-    }
-
-    box.querySelectorAll("button[data-opdel]").forEach(btn=>{
-      btn.addEventListener("click", async ()=>{
-        const id = btn.getAttribute("data-opdel");
-        if(!id) return;
-        if(!confirm("Eliminare questo operatore?")) return;
-        try{
-          await deleteDoc(doc(fs, COL_OPERATORS, id));
-          await loadOperators();
-        }catch(err){
-          console.error(err);
-          alert("Errore eliminazione operatore: " + (err?.message || err));
-        }
-      });
-    });
-  }
-
-  render(cachedOperators.prod, prodBox);
-  render(cachedOperators.ctrl, ctrlBox);
-}
-
-function bindOperatorPicker(inputId, listId, role){
-  const inp = document.getElementById(inputId);
-  const listWrap = document.getElementById(listId);
-  if(!inp || !listWrap) return;
-
-  const getList = ()=> (role==="prod" ? (cachedOperators.prod||[]) : (cachedOperators.ctrl||[]));
-
-  const render = ()=>{
-    const q = normText(inp.value);
-    const list = getList();
-    listWrap.innerHTML = "";
-
-    // se vuoto, mostra i primi 6
-    const filtered = q
-      ? list.filter(op => normText(operatorDisplay(op)).includes(q) || normText(op.nome).includes(q) || normText(op.cognome).includes(q) || normText(op.sigla).includes(q))
-      : list;
-
-    const show = filtered.slice(0, 8);
-    if(show.length===0){
-      if(q){
-        listWrap.innerHTML = `<div class="muted">Nessun match. Puoi inserire un nome manualmente 👍</div>`;
-      } else {
-        listWrap.innerHTML = `<div class="muted">Nessun operatore salvato.</div>`;
-      }
-      return;
-    }
-
-    for(const op of show){
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "smallbtn secondary";
-      b.style.marginRight = "8px";
-      b.style.marginTop = "8px";
-      b.textContent = operatorDisplay(op);
-      b.addEventListener("click", ()=>{
-        inp.value = operatorDisplay(op);
-        inp.dispatchEvent(new Event("input"));
-      });
-      listWrap.appendChild(b);
-    }
-  };
-
-  inp.addEventListener("input", render);
-  inp.addEventListener("focus", render);
-  render();
-}
-
-function refreshOperatorPickers(){
-  // New check
-  bindOperatorPicker("checkProdottoDa", "checkProdottoDaList", "prod");
-  bindOperatorPicker("checkEffettuatoDa", "checkEffettuatoDaList", "ctrl");
-
-  // Detail page
-  bindOperatorPicker("detailProdottoDa", "detailProdottoDaList", "prod");
-  bindOperatorPicker("detailEffettuatoDa", "detailEffettuatoDaList", "ctrl");
-}
-
-function isOperatorKnown(value, role){
-  const v = normText(value);
-  if(!v) return true;
-  const list = (role==="prod") ? (cachedOperators.prod||[]) : (cachedOperators.ctrl||[]);
-  return list.some(op => normText(operatorDisplay(op)) === v);
-}
 }
 
 
@@ -1608,9 +1406,7 @@ async function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate, incl
     doc.setFont("helvetica","normal"); doc.text(pdfSafe(v), margin+35, y+4, { maxWidth: boxW-40 });
     y += rowH;
   }
-  y += 10;
-  doc.setDrawColor(220);
-  doc.line(margin, y-6, pageW - margin, y-6);
+  y += 6;
 
   // Tabella parametri
   doc.setFont("helvetica","bold");
@@ -1673,15 +1469,8 @@ async function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate, incl
 
   drawTableHeader();
 
-  const results = (check?.results || []).filter(r => selectedKeys.includes(r.key) && r.key !== "aspetto");
-
-  // Aspetto (virtuale)
-  const includeAspetto = selectedKeys.includes("aspetto");
-  if(includeAspetto){
-    drawRow(["Aspetto", "OK", "", ""]);
-  }
-
-  if(results.length === 0 && !includeAspetto){
+  const results = (check?.results || []).filter(r => selectedKeys.includes(r.key));
+  if(results.length === 0){
     drawRow(["-", "-", "-", "-"]);
   } else {
     for(const r of results){
@@ -1866,7 +1655,6 @@ async function renderAllProducts(){
         }
         await refreshKPIs();
         await renderHomeRecentProducts();
-    await loadOperators();
         await renderAllProducts();
       } catch(err){
         console.error(err);
@@ -2361,9 +2149,6 @@ async function startNewCheck(){
   document.getElementById("checkProdottoDa").value = "";
   document.getElementById("checkEffettuatoDa").value = "";
 
-  // operator pickers
-  refreshOperatorPickers();
-
   const container = document.getElementById("checkRows");
   container.innerHTML = "";
 
@@ -2480,19 +2265,8 @@ async function saveCheck(){
     effettuatoDa: document.getElementById("checkEffettuatoDa").value.trim()
   };
 
-  // Conferme per campi vuoti (tranne lotto)
-  const emptyMeta = [];
-  if(!meta.prodottoDa) emptyMeta.push("Prodotto da");
-  if(!meta.effettuatoDa) emptyMeta.push("Effettuato da");
-
-  // Conferma se operatore non in elenco (ma lasciamo salvare)
-  const unknownOps = [];
-  if(meta.prodottoDa && !isOperatorKnown(meta.prodottoDa, "prod")) unknownOps.push(`Prodotto da: "${meta.prodottoDa}"`);
-  if(meta.effettuatoDa && !isOperatorKnown(meta.effettuatoDa, "ctrl")) unknownOps.push(`Effettuato da: "${meta.effettuatoDa}"`);
-
   const results = [];
   let anyOut = false;
-  const missingControls = [];
 
   const orderKeys = buildControlsDisplayOrder(p);
   for(const key of orderKeys){
@@ -2501,8 +2275,11 @@ async function saveCheck(){
     if(!hasSpecToRequest(c)) continue;
 
     const inp = document.querySelector(`#checkRows input[data-val="${CSS.escape(c.key)}"]`);
-    const raw = (inp?.value ?? "");
-    const v = toNumber(raw);
+    const v = toNumber(inp?.value ?? "");
+    if(v===null) return alert(`Valore mancante per: ${c.name}`);
+
+    const ok = evaluateValueAgainstSpec(c, v);
+    if(!ok) anyOut = true;
 
     // Allegati PDF (solo ΔE / Resa)
     let attachmentName = null;
@@ -2516,40 +2293,7 @@ async function saveCheck(){
       }
     }
 
-    if(v===null){
-      missingControls.push(c.name);
-      anyOut = true; // per richiesta: dato mancante => Fuori STD
-      results.push({ key:c.key, name:c.name, value:null, unit:c.unit ?? "", ok:false, specText: specText(c), attachmentName, attachmentB64 });
-      continue;
-    }
-
-    const ok = evaluateValueAgainstSpec(c, v);
-    if(!ok) anyOut = true;
-
     results.push({ key:c.key, name:c.name, value:v, unit:c.unit ?? "", ok, specText: specText(c), attachmentName, attachmentB64 });
-  }
-
-  // Conferma unica se manca qualcosa
-  const parts = [];
-  if(missingControls.length) parts.push("Valori mancanti (saranno segnati Fuori STD):
-- " + missingControls.join("
-- "));
-  if(emptyMeta.length) parts.push("Campi vuoti:
-- " + emptyMeta.join("
-- "));
-  if(unknownOps.length) parts.push("Operatori non presenti in elenco (salvo comunque):
-- " + unknownOps.join("
-- "));
-
-  if(parts.length){
-    const msg = "ATTENZIONE ⚠️
-
-" + parts.join("
-
-") + "
-
-Vuoi salvare comunque?";
-    if(!confirm(msg)) return;
   }
 
   const check = {
@@ -2905,9 +2649,6 @@ async function openCheckDetailPage(checkId){
   bindMeta(pdEl, "prodottoDa");
   bindMeta(edEl, "effettuatoDa");
 
-  // operator pickers
-  refreshOperatorPickers();
-
   const vn = document.getElementById("detailViscNote");
   if(vn){
     vn.value = detailCheck.meta.viscositaNote ?? "";
@@ -3227,64 +2968,16 @@ document.getElementById("restoreJsonFile").addEventListener("change", async (e)=
     e.target.value="";
   }
 });
-
-// Operatori (admin)
-document.getElementById("opAddBtn")?.addEventListener("click", async ()=>{
-  const role = document.getElementById("opRole")?.value || "prod";
-  const nome = (document.getElementById("opFirst")?.value || "").trim();
-  const cognome = (document.getElementById("opLast")?.value || "").trim();
-  const sigla = (document.getElementById("opSigla")?.value || "").trim();
-
-  if(!nome || !cognome) return alert("Inserisci almeno Nome e Cognome.");
-  if(!sigla) {
-    if(!confirm("Sigla vuota. Vuoi salvare comunque?")) return;
-  }
-
-  const id = uuid();
-  const op = { role, nome, cognome, sigla, createdAtISO: new Date().toISOString() };
-
-  try{
-    await setDoc(doc(fs, COL_OPERATORS, id), op);
-    document.getElementById("opFirst").value = "";
-    document.getElementById("opLast").value = "";
-    document.getElementById("opSigla").value = "";
-    await loadOperators();
-  }catch(err){
-    console.error(err);
-    alert("Errore salvataggio operatore: " + (err?.message || err));
-  }
-});
-
-document.getElementById("opReloadBtn")?.addEventListener("click", async ()=>{
-  await loadOperators();
-});
-
 document.getElementById("wipeBtn").addEventListener("click", async ()=>{
-  // 1) prima conferma
   if(!confirm("Sicuro? Elimina TUTTO il database (cloud).")) return;
-
-  // 2) password
-  const pass = prompt("Inserisci password admin per continuare:");
-  if(pass === null) return; // annulla
-  if(String(pass) !== "VivColorLab26"){
-    alert("Password errata. Operazione annullata.");
-    return;
-  }
-
-  // 3) seconda conferma
-  if(!confirm("ULTIMA CONFERMA: vuoi davvero svuotare TUTTO il database cloud?")) return;
-
   await wipeAllFirestore();
   currentCode=null; cachedProduct=null;
   document.getElementById("codeInput").value = "";
   showView("home");
   await refreshKPIs();
   await renderHomeRecentProducts();
-  await renderAllProducts();
-  await loadOperators(); // aggiorna anche lista operatori
   alert("Database (cloud) svuotato.");
 });
-
 
 /* =========================
    Init
