@@ -226,6 +226,19 @@
       line-height:1.35;
     }
   
+  
+    .cardsGrid{ display:grid; gap:12px; grid-template-columns: 1fr; }
+    @media(min-width:740px){ .cardsGrid{ grid-template-columns: 1fr 1fr; } }
+    .prodCard{ border:1px solid var(--b); border-radius:16px; padding:12px; background:#fff; box-shadow: 0 6px 18px rgba(15,23,42,.05); }
+    .prodCardTop{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .prodCardCode{ font-family:var(--mono); font-weight:950; }
+    .prodCardName{ font-weight:900; margin-top:2px; }
+    .prodCardMeta{ color:var(--m); font-size:12px; margin-top:6px; line-height:1.25; }
+    .prodCardBtns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .prodCardBtns .smallbtn{ min-height:36px; }
+
+    @media(max-width:720px){ #viewAllProducts .tableWrap{ display:none; } }
+
   /* ===== CoA Modal ===== */
   .overlay{
     position:fixed; inset:0;
@@ -312,15 +325,13 @@
       <div class="hr"></div>
 
       <div class="topline">
-        <b>Export / Backup</b>
+        <b>Backup totale</b>
         <span class="tag">Consigliato</span>
       </div>
-      <div class="muted">Backup JSON per sicurezza. Export CSV apribile in Excel.</div>
+      <div class="muted">Backup JSON completo per sicurezza.</div>
 
       <div class="btns">
-        <button id="exportProdCsvBtnLeft" class="secondary">Export prodotto (CSV)</button>
-        <button id="exportAllCsvBtn">Esporta TUTTO (CSV)</button>
-        <button id="backupJsonBtn">Backup (JSON)</button>
+<button id="backupJsonBtn">Backup (JSON)</button>
         <label style="margin:0">
           <input type="file" id="restoreJsonFile" accept=".json" style="display:none" />
           <button id="restoreJsonBtn">Ripristina (JSON)</button>
@@ -336,6 +347,10 @@
 
       <div class="btns">
         <button class="danger" id="wipeBtn">Svuota database cloud</button>
+      </div>
+
+      <div class="btns">
+        <button id="operatorsBtn" class="secondary">Gestione operatori</button>
       </div>
 
       <div class="kpi">
@@ -389,7 +404,45 @@
           </div>
         </div>
 
-        <div class="tableWrap" style="margin-top:12px;">
+        
+        <div class="hr"></div>
+
+        <div class="topline">
+          <div>
+            <div class="muted">Filtri</div>
+            <div class="title">Cerca</div>
+          </div>
+          <span class="tag">Mobile-friendly</span>
+        </div>
+
+        <div class="row2" style="margin-top:10px;">
+          <div>
+            <label style="margin-top:0">Cerca per codice / nome / lotto / operatore</label>
+            <input id="allProductsSearch" placeholder="Scrivi per filtrare..." autocomplete="off" />
+          </div>
+          <div>
+            <label style="margin-top:0">Vista</label>
+            <select id="allProductsViewMode">
+              <option value="auto">Auto</option>
+              <option value="table">Tabella</option>
+              <option value="cards">Schede</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="topline">
+          <div>
+            <div class="muted">Elenco</div>
+            <div class="title">Prodotti</div>
+          </div>
+          <span class="tag">Rapido</span>
+        </div>
+
+        <div id="allProductsCards" style="margin-top:12px;"></div>
+
+<div class="tableWrap" style="margin-top:12px;">
           <table>
             <thead>
               <tr>
@@ -420,6 +473,7 @@
             <button id="editSetupBtn">Setup controlli</button>
             <button class="primary" id="newCheckBtn">Nuovo controllo</button>
             <button id="historyBtn">Storico</button>
+            <button id="exportProdCsvBtnProdView" class="secondary">Export prodotto (CSV)</button>
           </div>
         </div>
 
@@ -591,11 +645,17 @@
         <div class="row2">
           <div>
             <label>Prodotto da</label>
-            <input id="checkProdottoDa" placeholder="Sigla / cognome" />
+            <input id="checkProdottoDa" placeholder="Sigla / cognome" list="prodOperatorsDatalist" />
+            <div class="muted" style="margin-top:6px">Elenco (Produzione) — scrivi per filtrare, clicca per selezionare.</div>
+            <div id="prodOperatorsPick" class="btns" style="margin-top:6px"></div>
+            <datalist id="prodOperatorsDatalist"></datalist>
           </div>
           <div>
             <label>Effettuato da</label>
-            <input id="checkEffettuatoDa" placeholder="Sigla / cognome" />
+            <input id="checkEffettuatoDa" placeholder="Sigla / cognome" list="qcOperatorsDatalist" />
+            <div class="muted" style="margin-top:6px">Elenco (Qualità) — scrivi per filtrare, clicca per selezionare.</div>
+            <div id="qcOperatorsPick" class="btns" style="margin-top:6px"></div>
+            <datalist id="qcOperatorsDatalist"></datalist>
           </div>
         </div>
 
@@ -1409,6 +1469,11 @@ async function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate, incl
   y += 6;
 
   // Tabella parametri
+  // Separazione visiva dalla sezione dati iniziali
+  doc.setDrawColor(200);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y-2, margin + boxW, y-2);
+  y += 4;
   doc.setFont("helvetica","bold");
   doc.setFontSize(11);
   doc.text("Risultati delle prove", margin, y);
@@ -1469,7 +1534,19 @@ async function buildCoAPdfBytes({ product, check, selectedKeys, expiryDate, incl
 
   drawTableHeader();
 
-  const results = (check?.results || []).filter(r => selectedKeys.includes(r.key));
+  const resultsRaw = (check?.results || []);
+  const results = [];
+
+  // Aspetto (se selezionato): prima riga fissa OK
+  if(selectedKeys.includes("aspetto")){
+    results.push({ key:"aspetto", name:"Aspetto", specText:"Esito: OK", value:"OK", unit:"", stato:"OK" });
+  }
+
+  // Altri risultati selezionati (escludo 'aspetto' perché già gestito)
+  resultsRaw
+    .filter(r => r && r.key && r.key!=="aspetto" && selectedKeys.includes(r.key))
+    .forEach(r => results.push(r));
+
   if(results.length === 0){
     drawRow(["-", "-", "-", "-"]);
   } else {
@@ -1524,6 +1601,7 @@ const views = {
   newCheck: document.getElementById("viewNewCheck"),
   history: document.getElementById("viewHistory"),
   detail: document.getElementById("viewCheckDetail"),
+  operators: document.getElementById("viewOperators"),
 };
 function showView(name){
   Object.values(views).forEach(v=>v.classList.add("hide"));
@@ -1595,7 +1673,7 @@ async function renderHomeRecentProducts(){
   });
 }
 
-async function renderAllProducts(){
+async function renderAllProductsTable(){
   const body = document.getElementById("allProductsBody");
   body.innerHTML = "";
 
@@ -1710,6 +1788,7 @@ function specText(c){
   return "";
 }
 function evaluateValueAgainstSpec(c, v){
+  if(v===null || v===undefined || Number.isNaN(v)) return false;
   if(c.type==="num_max"){
     if(c.spec?.max==null) return true;
     return v <= c.spec.max;
@@ -2231,6 +2310,7 @@ async function startNewCheck(){
     container.appendChild(warn);
   }
 
+  renderOperatorPickers();
   showView("newCheck");
 }
 
@@ -2268,6 +2348,7 @@ async function saveCheck(){
 
   const results = [];
   let anyOut = false;
+  const missingControls = [];
 
   const orderKeys = buildControlsDisplayOrder(p);
   for(const key of orderKeys){
@@ -2276,8 +2357,11 @@ async function saveCheck(){
     if(!hasSpecToRequest(c)) continue;
 
     const inp = document.querySelector(`#checkRows input[data-val="${CSS.escape(c.key)}"]`);
-    const v = toNumber(inp?.value ?? "");
-    if(v===null) return alert(`Valore mancante per: ${c.name}`);
+    const raw = (inp?.value ?? "").trim();
+    const v = toNumber(raw);
+    if(v===null){
+      missingControls.push(c.name);
+    }
 
     const ok = evaluateValueAgainstSpec(c, v);
     if(!ok) anyOut = true;
@@ -2296,6 +2380,29 @@ async function saveCheck(){
 
     results.push({ key:c.key, name:c.name, value:v, unit:c.unit ?? "", ok, specText: specText(c), attachmentName, attachmentB64 });
   }
+  // Conferme: dati mancanti (tranne lotto) + operatori non presenti in elenco
+  const missingMeta = [];
+  if(!meta.prodottoDa) missingMeta.push("Prodotto da");
+  if(!meta.effettuatoDa) missingMeta.push("Effettuato da");
+
+  const ops = loadOperators();
+  const prodOps = ops.filter(o=> (o.role||"").toLowerCase()==="produzione").map(formatOperator);
+  const qcOps   = ops.filter(o=> (o.role||"").toLowerCase()==="qualita").map(formatOperator);
+
+  const notInList = [];
+  if(meta.prodottoDa && !isOperatorInList(meta.prodottoDa, prodOps)) notInList.push(`Prodotto da: "${meta.prodottoDa}"`);
+  if(meta.effettuatoDa && !isOperatorInList(meta.effettuatoDa, qcOps)) notInList.push(`Effettuato da: "${meta.effettuatoDa}"`);
+
+  const warnParts = [];
+  if(missingControls.length) warnParts.push("Valori mancanti (saranno FUORI STD):\n- " + missingControls.join("\n- "));
+  if(missingMeta.length) warnParts.push("Campi non compilati:\n- " + missingMeta.join("\n- "));
+  if(notInList.length) warnParts.push("Operatori non presenti in elenco (salvo comunque):\n- " + notInList.join("\n- "));
+
+  if(warnParts.length){
+    const ok = confirm(warnParts.join("\n\n") + "\n\nVuoi salvare comunque?");
+    if(!ok) return;
+  }
+
 
   const check = {
     id: uuid(),
@@ -2684,11 +2791,15 @@ function openCoAModal(){
   paramsWrap.innerHTML = "";
 
   const results = (detailCheck.results || []).slice();
-  // Default: seleziona solo risultati con valore presente
-  const items = results.map(r=>{
+
+  // Aspetto: sempre disponibile (default OFF). Se attivato: esito OK.
+  const items = [
+    { key:"aspetto", name:"Aspetto", specText:"Esito: OK", value:"OK", _checked:false, _force:true },
+    ...results.map(r=>{
     const hasValue = !(r.value===null || r.value===undefined || r.value==="");
     return { ...r, _checked: hasValue };
-  });
+    })
+  ];
 
   for(const r of items){
     const div = document.createElement("div");
@@ -2893,6 +3004,23 @@ document.getElementById("addCustomControlBtnNew").addEventListener("click", ()=>
 document.getElementById("addCustomControlBtnEdit").addEventListener("click", ()=> addCustomControl("edit"));
 
 document.getElementById("newCheckBtn").addEventListener("click", startNewCheck);
+document.getElementById("operatorsBtn").addEventListener("click", ()=>{ renderOperatorsList(); showView("operators"); });
+document.getElementById("operatorsBackBtn").addEventListener("click", ()=> showView("home"));
+document.getElementById("saveOperatorBtn").addEventListener("click", ()=>{
+  const role = (document.getElementById("operatorRole").value||"").trim();
+  const name = (document.getElementById("opName").value||"").trim();
+  const surname = (document.getElementById("opSurname").value||"").trim();
+  const code = (document.getElementById("opCode").value||"").trim();
+  if(!role || !name || !surname || !code) return alert("Compila ruolo, nome, cognome e sigla.");
+  const list = loadOperators();
+  const formatted = formatOperator({role,name,surname,code});
+  const exists = list.some(o=> formatOperator(o)===formatted);
+  if(exists) return alert("Operatore già presente.");
+  list.push({ role, name, surname, code });
+  saveOperators(list);
+  renderOperatorsList();
+  alert("Operatore salvato ✅");
+});
 document.getElementById("cancelCheckBtn").addEventListener("click", async ()=> loadProduct(currentCode));
 document.getElementById("saveCheckBtn").addEventListener("click", saveCheck);
 
@@ -2983,15 +3111,119 @@ document.getElementById("restoreJsonFile").addEventListener("change", async (e)=
   }
 });
 document.getElementById("wipeBtn").addEventListener("click", async ()=>{
-  if(!confirm("Sicuro? Elimina TUTTO il database (cloud).")) return;
+  // Doppia conferma + password + ultima conferma
+  const c1 = confirm("⚠️ ATTENZIONE: stai per SVUOTARE TUTTO il database cloud. Vuoi continuare?");
+  if(!c1) return;
+
+  const pwd = prompt("Inserisci la password per continuare:");
+  if(pwd===null) return;
+
+  if(pwd !== "VivColorLab26"){
+    alert("Password errata. Operazione annullata.");
+    return;
+  }
+
+  const c2 = confirm("Ultima conferma: SVUOTO DAVVERO tutto il database cloud?");
+  if(!c2) return;
+
   await wipeAllFirestore();
-  currentCode=null; cachedProduct=null;
-  document.getElementById("codeInput").value = "";
+  currentCode = null;
+  cachedProduct = null;
   showView("home");
   await refreshKPIs();
-  await renderHomeRecentProducts();
-  alert("Database (cloud) svuotato.");
+  await renderAllProducts();
+  alert("Database cloud svuotato.");
 });
+
+
+/* =========================
+   Operators (localStorage)
+========================= */
+const OPERATORS_KEY = "vivcolor_operators_v1";
+
+function loadOperators(){
+  try{ return JSON.parse(localStorage.getItem(OPERATORS_KEY) || "[]"); }
+  catch(_){ return []; }
+}
+function saveOperators(list){
+  localStorage.setItem(OPERATORS_KEY, JSON.stringify(list || []));
+}
+function esc2(s){ return esc(s ?? ""); }
+function normOp(s){ return (s||"").toString().trim().toLowerCase(); }
+function formatOperator(o){
+  const code = (o.code||"").trim();
+  const surname = (o.surname||"").trim();
+  const name = (o.name||"").trim();
+  return `${code} - ${surname} ${name}`.replace(/\s+/g," ").trim();
+}
+function isOperatorInList(input, list){
+  const n = normOp(input);
+  return list.some(x => normOp(x) === n);
+}
+function renderOperatorsList(){
+  const wrap = document.getElementById("operatorsList");
+  if(!wrap) return;
+  const ops = loadOperators();
+
+  if(!ops.length){
+    wrap.innerHTML = '<div class="muted">Nessun operatore salvato. Aggiungine uno sopra 👆</div>';
+    return;
+  }
+
+  // Raggruppo
+  const prod = ops.filter(o=> (o.role||"").toLowerCase()==="produzione");
+  const qc   = ops.filter(o=> (o.role||"").toLowerCase()==="qualita");
+
+  const renderGroup = (title, arr)=>`
+    <div class="controlCard" style="margin-top:10px">
+      <b>${esc2(title)}</b>
+      <div class="muted" style="margin-top:6px">${arr.length ? arr.map(o=>`<div>• <span class="mono">${esc2((o.code||"").trim())}</span> — ${esc2((o.surname||"").trim())} ${esc2((o.name||"").trim())}</div>`).join("") : "—"}</div>
+    </div>
+  `;
+
+  wrap.innerHTML = renderGroup("Produzione", prod) + renderGroup("Qualità", qc);
+}
+
+function renderOperatorPickers(){
+  const ops = loadOperators();
+  const prod = ops.filter(o=> (o.role||"").toLowerCase()==="produzione").map(formatOperator);
+  const qc   = ops.filter(o=> (o.role||"").toLowerCase()==="qualita").map(formatOperator);
+
+  const prodInput = document.getElementById("checkProdottoDa");
+  const qcInput   = document.getElementById("checkEffettuatoDa");
+  const prodWrap  = document.getElementById("prodOperatorsPick");
+  const qcWrap    = document.getElementById("qcOperatorsPick");
+  const prodDL    = document.getElementById("prodOperatorsDatalist");
+  const qcDL      = document.getElementById("qcOperatorsDatalist");
+
+  const fillList = (datalist, arr)=>{
+    if(!datalist) return;
+    datalist.innerHTML = arr.map(x=>`<option value="${esc2(x)}"></option>`).join("");
+  };
+
+  const renderBtns = (wrap, arr, query, onPick)=>{
+    if(!wrap) return;
+    const q = normOp(query);
+    const filtered = arr.filter(x=> !q || normOp(x).includes(q)).slice(0, 12);
+    wrap.innerHTML = filtered.map(x=>`<button type="button" class="smallbtn" data-op="${esc2(x)}">${esc2(x)}</button>`).join("") || '<span class="muted">—</span>';
+    wrap.querySelectorAll("button[data-op]").forEach(b=>{
+      b.addEventListener("click", ()=> onPick(b.getAttribute("data-op")));
+    });
+  };
+
+  fillList(prodDL, prod);
+  fillList(qcDL, qc);
+
+  const refresh = ()=>{
+    renderBtns(prodWrap, prod, prodInput?.value, (v)=>{ if(prodInput) prodInput.value = v; renderOperatorPickers(); });
+    renderBtns(qcWrap, qc, qcInput?.value, (v)=>{ if(qcInput) qcInput.value = v; renderOperatorPickers(); });
+  };
+
+  prodInput?.addEventListener("input", refresh, { passive:true });
+  qcInput?.addEventListener("input", refresh, { passive:true });
+
+  refresh();
+}
 
 /* =========================
    Init
@@ -3008,6 +3240,101 @@ document.getElementById("wipeBtn").addEventListener("click", async ()=>{
     alert("Errore DB: " + err.message);
   }
 })();
+
+
+function productMatchesQuery(p, q){
+  q = (q||"").trim().toLowerCase();
+  if(!q) return true;
+  const s = [p.code, p.name, p.lastLot, p.lastBy].filter(Boolean).join(" ").toLowerCase();
+  return s.includes(q);
+}
+
+function renderAllProductsCards(rows){
+  const wrap = document.getElementById("allProductsCards");
+  if(!wrap) return;
+  if(!rows || !rows.length){
+    wrap.innerHTML = '<div class="muted">Nessun prodotto trovato.</div>';
+    return;
+  }
+  wrap.innerHTML = '<div class="cardsGrid">' + rows.map(r=>{
+    const code = escapeHtml(r.code||"");
+    const name = escapeHtml(r.name||"");
+    const n = r.nChecks || 0;
+    const last = r.lastDate ? new Date(r.lastDate).toLocaleString("it-IT") : "—";
+    const lot = escapeHtml(r.lastLot||"—");
+    const who = escapeHtml(r.lastBy||"—");
+    return `
+      <div class="prodCard">
+        <div class="prodCardTop">
+          <div>
+            <div class="prodCardCode">${code}</div>
+            <div class="prodCardName">${name}</div>
+            <div class="prodCardMeta">Controlli: <b>${n}</b> • Ultimo: <b>${last}</b><br/>Lotto: <b>${lot}</b> • Da: <b>${who}</b></div>
+          </div>
+          <div class="prodCardBtns">
+            <button class="smallbtn primary" data-open="${code}">Apri</button>
+            <button class="smallbtn danger" data-del="${code}">Elimina</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("") + "</div>";
+
+  wrap.querySelectorAll("[data-open]").forEach(b=> b.onclick = ()=> openProduct(b.dataset.open));
+  wrap.querySelectorAll("[data-del]").forEach(b=> b.onclick = ()=> deleteProductFlow(b.dataset.del));
+}
+
+function applyAllProductsUI(){
+  const q = (document.getElementById("allProductsSearch")?.value || "").trim();
+  const mode = document.getElementById("allProductsViewMode")?.value || "auto";
+  const isMobile = window.matchMedia("(max-width:720px)").matches;
+  const cards = document.getElementById("allProductsCards");
+  const table = document.querySelector("#viewAllProducts .tableWrap");
+
+  const wantCards = mode==="cards" || (mode==="auto" && isMobile);
+  const wantTable = mode==="table" || (mode==="auto" && !isMobile);
+
+  if(cards) cards.style.display = wantCards ? "" : "none";
+  if(table) table.style.display = wantTable ? "" : "none";
+
+  if(window.__allProductsCache){
+    const filtered = window.__allProductsCache.filter(p=>productMatchesQuery(p, q));
+    renderAllProductsTable(filtered);
+    renderAllProductsCards(filtered);
+  }
+}
+
+async function deleteProductFlow(code){
+  if(!code) return;
+  if(!confirm("Eliminare il prodotto "+code+" ?")) return;
+  if(typeof deleteProduct === "function") return deleteProduct(code);
+  if(typeof deleteProductByCode === "function") return deleteProductByCode(code);
+  alert("Funzione elimina non trovata.");
+}
+
+window.addEventListener("resize", ()=> {
+  clearTimeout(window.__apResizeT);
+  window.__apResizeT = setTimeout(applyAllProductsUI, 120);
+});
+
+function renderAllProducts(list){
+  window.__allProductsCache = Array.isArray(list) ? list : [];
+  renderAllProductsTable(window.__allProductsCache);
+  renderAllProductsCards(window.__allProductsCache);
+
+  const s = document.getElementById("allProductsSearch");
+  const v = document.getElementById("allProductsViewMode");
+  if(s && !s.__bound){
+    s.__bound = true;
+    s.addEventListener("input", applyAllProductsUI);
+  }
+  if(v && !v.__bound){
+    v.__bound = true;
+    v.addEventListener("change", applyAllProductsUI);
+  }
+  applyAllProductsUI();
+}
+
 </script>
 </body>
 </html>
