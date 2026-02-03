@@ -2631,6 +2631,7 @@ async function renderHistory(){
     <th>Prodotto da</th>
     <th>Effettuato da</th>
     <th class="right">Apri</th>
+  <th class="right">Elimina</th>
   `;
   head.appendChild(trh);
 
@@ -2652,7 +2653,7 @@ async function renderHistory(){
 
   if(checks.length===0){
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="${10 + controls.length}" class="muted">Nessun risultato con questi filtri.</td>`;
+    tr.innerHTML = `<td colspan="${11 + controls.length}" class="muted">Nessun risultato con questi filtri.</td>`;
     body.appendChild(tr);
     return;
   }
