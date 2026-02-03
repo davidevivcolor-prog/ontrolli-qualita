@@ -473,8 +473,7 @@
             <button id="editSetupBtn">Setup controlli</button>
             <button class="primary" id="newCheckBtn">Nuovo controllo</button>
             <button id="historyBtn">Storico</button>
-            <button id="exportProdCsvBtnProdView" class="secondary">Export prodotto (CSV)</button>
-          </div>
+</div>
         </div>
 
         <div class="hr"></div>
@@ -566,6 +565,18 @@
           <div class="btns" style="margin-top:0">
             <button id="setupBackBtn">Torna a scheda</button>
             <button class="primary" id="setupSaveBtn">Salva setup</button>
+          </div>
+        </div>
+
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label style="margin-top:0">Codice prodotto</label>
+            <input id="setupCode" placeholder="Codice (es. 2AG1C)" />
+            <div class="muted" style="margin-top:6px">Modificando il codice verranno aggiornati anche tutti i controlli collegati.</div>
+          </div>
+          <div>
+            <label style="margin-top:0">Nome prodotto</label>
+            <input id="setupName" placeholder="Nome prodotto" />
           </div>
         </div>
 
@@ -783,6 +794,70 @@
 
     </div>
   </div>
+  <!-- OPERATORS -->
+  <div id="viewOperators" class="hide">
+    <div class="topline">
+      <div>
+        <div class="muted">Admin</div>
+        <div class="title">Gestione operatori</div>
+      </div>
+      <div class="btns" style="margin-top:0">
+        <button id="operatorsBackBtn">Home</button>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="topline">
+      <div>
+        <div class="muted">Aggiungi</div>
+        <div class="title">Nuovo operatore</div>
+      </div>
+      <span class="tag">Local</span>
+    </div>
+
+    <div class="row2" style="margin-top:10px">
+      <div>
+        <label style="margin-top:0">Ruolo</label>
+        <select id="operatorRole">
+          <option value="produzione">Produzione</option>
+          <option value="qualita">Qualità</option>
+        </select>
+      </div>
+      <div>
+        <label style="margin-top:0">Sigla</label>
+        <input id="opCode" placeholder="Es. DM / PD / ..." />
+      </div>
+    </div>
+
+    <div class="row2" style="margin-top:10px">
+      <div>
+        <label style="margin-top:0">Cognome</label>
+        <input id="opSurname" placeholder="Cognome" />
+      </div>
+      <div>
+        <label style="margin-top:0">Nome</label>
+        <input id="opName" placeholder="Nome" />
+      </div>
+    </div>
+
+    <div class="btns">
+      <button class="primary" id="saveOperatorBtn">Salva operatore</button>
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="topline">
+      <div>
+        <div class="muted">Elenco</div>
+        <div class="title">Operatori salvati</div>
+      </div>
+      <span class="tag">Usati nei controlli</span>
+    </div>
+
+    <div id="operatorsList" style="margin-top:12px"></div>
+  </div>
+
 
   <!-- CoA (Certificato di Analisi) Modal -->
   <div id="coaOverlay" class="overlay hide" aria-hidden="true">
@@ -1035,6 +1110,34 @@ async function deleteProductAndChecks(code){
   const snap = await getDocs(qy);
   for(const d of snap.docs){
     await deleteDoc(doc(fs, COL_CHECKS, d.id));
+  }
+}
+
+
+async function renameProductAndChecks(oldCode, newCode){
+  const o = normalizeCode(oldCode);
+  const n = normalizeCode(newCode);
+  if(!o || !n) throw new Error("Codice non valido.");
+  if(o === n) return;
+
+  // prevent overwrite
+  const existing = await getDoc(doc(fs, COL_PRODUCTS, n));
+  if(existing.exists()) throw new Error("Esiste già un prodotto con questo codice.");
+
+  // move product doc
+  const oldSnap = await getDoc(doc(fs, COL_PRODUCTS, o));
+  if(!oldSnap.exists()) throw new Error("Prodotto originale non trovato.");
+  const prodData = oldSnap.data();
+  prodData.code = n;
+
+  await setDoc(doc(fs, COL_PRODUCTS, n), prodData);
+  await deleteDoc(doc(fs, COL_PRODUCTS, o));
+
+  // update checks
+  const qy = query(collection(fs, COL_CHECKS), where("code", "==", o));
+  const snap = await getDocs(qy);
+  for(const d of snap.docs){
+    await setDoc(doc(fs, COL_CHECKS, d.id), { code: n }, { merge: true });
   }
 }
 
@@ -1685,42 +1788,35 @@ async function renderHomeRecentProducts(){
   });
 }
 
-async function renderAllProductsTable(){
+function renderAllProductsTable(rows){
   const body = document.getElementById("allProductsBody");
+  if(!body) return;
   body.innerHTML = "";
 
-  const t = tx([STORES.products, STORES.checks]);
-  const products = await getAll(t.objectStore(STORES.products));
-  const checks = await getAll(t.objectStore(STORES.checks));
+  const list = Array.isArray(rows) ? rows : [];
 
-  const map = new Map();
-  for(const c of checks){
-    if(!map.has(c.code)) map.set(c.code, []);
-    map.get(c.code).push(c);
-  }
-  for(const [k, list] of map.entries()){
-    list.sort((a,b)=> (b.dateISO||"").localeCompare(a.dateISO||""));
+  if(list.length===0){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="8" class="muted">Nessun prodotto trovato.</td>`;
+    body.appendChild(tr);
+    return;
   }
 
-  products.sort((a,b)=> a.code.localeCompare(b.code));
-
-  for(const p of products){
-    const list = map.get(p.code) || [];
-    const last = list[0] || null;
-
+  // Sort stable by code
+  list.slice().sort((a,b)=> (a.code||"").localeCompare(b.code||"")).forEach(r=>{
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="mono"><b>${esc(p.code)}</b></td>
-      <td>${esc(p.name)}</td>
-      <td class="right">${list.length}</td>
-      <td>${last ? esc(fmtDateTime(last.dateISO)) : ""}</td>
-      <td class="mono">${last ? esc(last.lotto ?? "") : ""}</td>
-      <td class="mono">${last ? esc(last.meta?.effettuatoDa ?? "") : ""}</td>
-      <td class="right"><button class="smallbtn secondary" data-openprod="${esc(p.code)}">Apri</button></td>
-      <td class="right"><button class="smallbtn danger" data-delprod="${esc(p.code)}">Elimina</button></td>
+      <td class="mono"><b>${esc(r.code || "")}</b></td>
+      <td>${esc(r.name || "")}</td>
+      <td class="right">${Number(r.nChecks || 0)}</td>
+      <td>${r.lastDate ? esc(fmtDateTime(r.lastDate)) : ""}</td>
+      <td class="mono">${esc(r.lastLot || "")}</td>
+      <td class="mono">${esc(r.lastBy || "")}</td>
+      <td class="right"><button class="smallbtn secondary" data-openprod="${esc(r.code||"")}">Apri</button></td>
+      <td class="right"><button class="smallbtn danger" data-delprod="${esc(r.code||"")}">Elimina</button></td>
     `;
     body.appendChild(tr);
-  }
+  });
 
   body.querySelectorAll("button[data-openprod]").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
@@ -1732,24 +1828,7 @@ async function renderAllProductsTable(){
   body.querySelectorAll("button[data-delprod]").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const code = btn.getAttribute("data-delprod");
-      if(!code) return;
-      const msg = `Eliminare il prodotto ${code} e TUTTI i suoi controlli? Operazione irreversibile.`;
-      if(!confirm(msg)) return;
-      try{
-        await deleteProductAndChecks(code);
-        // refresh lists
-        if(currentCode === code){
-          currentCode = null;
-          cachedProduct = null;
-          showView("home");
-        }
-        await refreshKPIs();
-        await renderHomeRecentProducts();
-        await renderAllProducts();
-      } catch(err){
-        console.error(err);
-        alert("Errore eliminazione prodotto: " + (err?.message || err));
-      }
+      await deleteProductFlow(code);
     });
   });
 }
@@ -1897,7 +1976,6 @@ function renderLastChecks5(product, checks){
     <th>Prodotto da</th>
     <th>Effettuato da</th>
     <th class="right">Apri</th>
-    <th class="right">Elimina</th>
   `;
   headEl.appendChild(trh);
 
@@ -1930,8 +2008,7 @@ function renderLastChecks5(product, checks){
       <td class="mono">${esc(chk.meta?.prodottoDa ?? "")}</td>
       <td class="mono">${esc(chk.meta?.effettuatoDa ?? "")}</td>
       <td class="right"><button class="smallbtn secondary" data-open="${esc(chk.id)}">Apri</button></td>
-      <td class="right"><button class="smallbtn danger" data-delcheck="${esc(chk.id)}">Elimina</button></td>
-    `;
+`;
     body.appendChild(tr);
   }
 
@@ -2196,6 +2273,10 @@ async function openSetup(){
   const p = cachedProduct;
   workingControlsEdit = deepClone(p.controls || deepClone(DEFAULT_CONTROLS));
   document.getElementById("setupTitle").textContent = `${p.code} — ${p.name}`;
+  const sc = document.getElementById("setupCode");
+  const sn = document.getElementById("setupName");
+  if(sc) sc.value = p.code;
+  if(sn) sn.value = p.name;
   document.getElementById("setupNOTE").value = p.noteOperative ?? "";
   renderSetupControls("edit");
   showView("setup");
@@ -2205,6 +2286,7 @@ async function saveSetup(){
   const p = cachedProduct;
   if(!p) return;
 
+  // Units/typing normalization
   for(const c of workingControlsEdit){
     if(c.key==="macinazione"){ c.unit="µm"; c.type="num_max"; c.spec = {max: c.spec?.max ?? null}; }
     if(c.key==="ph"){ c.unit=""; }
@@ -2215,13 +2297,40 @@ async function saveSetup(){
     if(c.key==="resa"){ c.unit="%"; c.type="num_minmax"; c.spec = {min: c.spec?.min ?? null, max: c.spec?.max ?? null}; }
   }
 
+  const newCode = normalizeCode(document.getElementById("setupCode")?.value || p.code);
+  const newName = (document.getElementById("setupName")?.value || "").trim();
+
+  if(!newCode) return alert("Il codice prodotto è obbligatorio.");
+  if(!newName) return alert("Il nome prodotto è obbligatorio.");
+
+  const oldCode = p.code;
+
+  // Update fields
+  p.code = newCode;
+  p.name = newName;
   p.noteOperative = document.getElementById("setupNOTE").value ?? "";
   p.controls = workingControlsEdit;
 
-  const t = tx([STORES.products], "readwrite");
-  await put(t.objectStore(STORES.products), p);
+  try{
+    if(oldCode !== newCode){
+      // rename in Firestore (product doc + checks)
+      await renameProductAndChecks(oldCode, newCode);
 
-  await loadProduct(p.code);
+      // after rename, ensure latest product doc has our current fields
+      const t = tx([STORES.products], "readwrite");
+      await put(t.objectStore(STORES.products), p);
+
+      currentCode = newCode;
+    } else {
+      const t = tx([STORES.products], "readwrite");
+      await put(t.objectStore(STORES.products), p);
+    }
+
+    await loadProduct(newCode);
+  }catch(err){
+    console.error(err);
+    alert("Errore salvataggio setup: " + (err?.message || err));
+  }
 }
 
 /* =========================
@@ -2459,7 +2568,6 @@ async function renderHistory(){
     <th>Prodotto da</th>
     <th>Effettuato da</th>
     <th class="right">Apri</th>
-    <th class="right">Elimina</th>
   `;
   head.appendChild(trh);
 
@@ -2508,8 +2616,7 @@ async function renderHistory(){
       <td class="mono">${esc(chk.meta?.prodottoDa ?? "")}</td>
       <td class="mono">${esc(chk.meta?.effettuatoDa ?? "")}</td>
       <td class="right"><button class="smallbtn secondary" data-open="${esc(chk.id)}">Apri</button></td>
-      <td class="right"><button class="smallbtn danger" data-delcheck="${esc(chk.id)}">Elimina</button></td>
-    `;
+`;
     body.appendChild(tr);
   }
 
@@ -3261,20 +3368,27 @@ function productMatchesQuery(p, q){
   return s.includes(q);
 }
 
+async function openProduct(code){
+  await loadProduct(code);
+}
+
 function renderAllProductsCards(rows){
   const wrap = document.getElementById("allProductsCards");
   if(!wrap) return;
-  if(!rows || !rows.length){
+
+  const list = Array.isArray(rows) ? rows : [];
+  if(!list.length){
     wrap.innerHTML = '<div class="muted">Nessun prodotto trovato.</div>';
     return;
   }
-  wrap.innerHTML = '<div class="cardsGrid">' + rows.map(r=>{
-    const code = escapeHtml(r.code||"");
-    const name = escapeHtml(r.name||"");
-    const n = r.nChecks || 0;
-    const last = r.lastDate ? new Date(r.lastDate).toLocaleString("it-IT") : "—";
-    const lot = escapeHtml(r.lastLot||"—");
-    const who = escapeHtml(r.lastBy||"—");
+
+  wrap.innerHTML = '<div class="cardsGrid">' + list.map(r=>{
+    const code = esc(r.code||"");
+    const name = esc(r.name||"");
+    const n = Number(r.nChecks || 0);
+    const last = r.lastDate ? esc(fmtDateTime(r.lastDate)) : "—";
+    const lot = esc(r.lastLot||"—");
+    const who = esc(r.lastBy||"—");
     return `
       <div class="prodCard">
         <div class="prodCardTop">
@@ -3309,19 +3423,66 @@ function applyAllProductsUI(){
   if(cards) cards.style.display = wantCards ? "" : "none";
   if(table) table.style.display = wantTable ? "" : "none";
 
-  if(window.__allProductsCache){
-    const filtered = window.__allProductsCache.filter(p=>productMatchesQuery(p, q));
-    renderAllProductsTable(filtered);
-    renderAllProductsCards(filtered);
-  }
+  const base = Array.isArray(window.__allProductsCache) ? window.__allProductsCache : [];
+  const filtered = base.filter(p=>productMatchesQuery(p, q));
+
+  renderAllProductsTable(filtered);
+  renderAllProductsCards(filtered);
 }
 
 async function deleteProductFlow(code){
   if(!code) return;
-  if(!confirm("Eliminare il prodotto "+code+" ?")) return;
-  if(typeof deleteProduct === "function") return deleteProduct(code);
-  if(typeof deleteProductByCode === "function") return deleteProductByCode(code);
-  alert("Funzione elimina non trovata.");
+  const msg = `Eliminare il prodotto ${code} e TUTTI i suoi controlli? Operazione irreversibile.`;
+  if(!confirm(msg)) return;
+
+  try{
+    await deleteProductAndChecks(code);
+
+    if(currentCode === code){
+      currentCode = null;
+      cachedProduct = null;
+      showView("home");
+    }
+
+    await refreshKPIs();
+    await renderHomeRecentProducts();
+    await renderAllProducts();
+  }catch(err){
+    console.error(err);
+    alert("Errore eliminazione prodotto: " + (err?.message || err));
+  }
+}
+
+async function buildAllProductsRows(){
+  const t = tx([STORES.products, STORES.checks]);
+  const products = await getAll(t.objectStore(STORES.products));
+  const checks = await getAll(t.objectStore(STORES.checks));
+
+  const map = new Map();
+  for(const c of checks){
+    const code = c.code;
+    if(!code) continue;
+    if(!map.has(code)) map.set(code, []);
+    map.get(code).push(c);
+  }
+  for(const [k, list] of map.entries()){
+    list.sort((a,b)=> (b.dateISO||"").localeCompare(a.dateISO||""));
+  }
+
+  products.sort((a,b)=> (a.code||"").localeCompare(b.code||""));
+
+  return products.map(p=>{
+    const list = map.get(p.code) || [];
+    const last = list[0] || null;
+    return {
+      code: p.code,
+      name: p.name,
+      nChecks: list.length,
+      lastDate: last ? last.dateISO : null,
+      lastLot: last ? (last.lotto ?? "") : "",
+      lastBy: last ? (last.meta?.effettuatoDa ?? "") : ""
+    };
+  });
 }
 
 window.addEventListener("resize", ()=> {
@@ -3329,10 +3490,9 @@ window.addEventListener("resize", ()=> {
   window.__apResizeT = setTimeout(applyAllProductsUI, 120);
 });
 
-function renderAllProducts(list){
-  window.__allProductsCache = Array.isArray(list) ? list : [];
-  renderAllProductsTable(window.__allProductsCache);
-  renderAllProductsCards(window.__allProductsCache);
+async function renderAllProducts(){
+  const rows = await buildAllProductsRows();
+  window.__allProductsCache = rows;
 
   const s = document.getElementById("allProductsSearch");
   const v = document.getElementById("allProductsViewMode");
@@ -3344,6 +3504,7 @@ function renderAllProducts(list){
     v.__bound = true;
     v.addEventListener("change", applyAllProductsUI);
   }
+
   applyAllProductsUI();
 }
 
