@@ -2058,7 +2058,7 @@ function renderLastChecks5(product, checks){
     tr.innerHTML = `
       <td>${esc(fmtDateTime(chk.dateISO))}</td>
       <td class="mono">${esc(chk.lotto ?? "")}</td>
-      <td><span class="${pillClass}">${esc(label)}</span></td>
+      <td><span class="${pillClass}">${esc(label)}</span>${chk.corretto ? ` <span class="tag" title="Formula corretta tramite aggiunte">Corretto</span>` : ``}</td>
       ${controls.map(c=>{
         const r = resMap.get(c.key);
         const val = (r && r.value!=null) ? `${r.value}` : "";
@@ -2589,16 +2589,31 @@ async function saveCheck(){
   }
 
 
-  const check = {
-    id: uuid(),
-    code: p.code,
-    dateISO,
-    lotto,
-    outcome: anyOut ? "FUORI_STD" : "OK",
-    results,
-    meta,
-    modifications: {}
-  };
+  const corretto = !!(meta.aggiunte && meta.aggiunte.trim().length>0);
+
+// Sanitize per Firestore (evita undefined / entità non supportate)
+const resultsSan = (results||[]).map(r=>({
+  key: String(r.key||""),
+  name: String(r.name||""),
+  value: (r.value===null ? null : Number(r.value)),
+  unit: String(r.unit||""),
+  ok: !!r.ok,
+  specText: String(r.specText||""),
+  attachmentName: (r.attachmentName ? String(r.attachmentName) : null),
+  attachmentB64: (r.attachmentB64 ? String(r.attachmentB64) : null)
+}));
+
+const check = {
+  id: uuid(),
+  code: p.code,
+  dateISO,
+  lotto,
+  outcome: anyOut ? "FUORI_STD" : "OK",
+  corretto,
+  results: resultsSan,
+  meta,
+  modifications: {}
+};
 
   const t = tx([STORES.checks], "readwrite");
   await put(t.objectStore(STORES.checks), check);
@@ -2668,7 +2683,7 @@ async function renderHistory(){
     tr.innerHTML = `
       <td>${esc(fmtDateTime(chk.dateISO))}</td>
       <td class="mono">${esc(chk.lotto ?? "")}</td>
-      <td><span class="${pillClass}">${esc(label)}</span></td>
+      <td><span class="${pillClass}">${esc(label)}</span>${chk.corretto ? ` <span class="tag" title="Formula corretta tramite aggiunte">Corretto</span>` : ``}</td>
       ${controls.map(c=>{
         const r = resMap.get(c.key);
         const val = (r && r.value!=null) ? `${r.value}` : "";
@@ -2765,7 +2780,7 @@ async function openCheckDetailPage(checkId){
   document.getElementById("detailNOTEfixed").textContent = p?.noteOperative ?? "";
 
   document.getElementById("detailMeta").textContent =
-    `${fmtDateTime(chk.dateISO)} • Lotto: ${chk.lotto ?? ""} • Esito: ${chk.outcome==="OK" ? "OK" : "Fuori STD"}`;
+    `${fmtDateTime(chk.dateISO)} • Lotto: ${chk.lotto ?? ""} • Esito: ${chk.outcome==="OK" ? "OK" : "Fuori STD"}${chk.corretto ? " • Corretto" : ""}`;
 
   const d = new Date(chk.dateISO);
   d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
@@ -3590,47 +3605,79 @@ async function renderOperatorHistory(op){
   if(kOk) kOk.textContent = String(ok);
   if(kOut) kOut.textContent = String(out);
 
-  // Breakdown per prodotto
+  // Breakdown per prodotto (Top 3)
   const byProd = new Map();
   for(const c of checks){
     const code = c.code || "—";
     byProd.set(code, (byProd.get(code)||0)+1);
   }
   const prodRows = [...byProd.entries()].sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]));
+  const top3 = prodRows.slice(0,3);
+
   if(breakdown){
-    breakdown.innerHTML = prodRows.length ? prodRows.map(([code,count])=>`
-      <div class="controlCard" style="margin-top:10px">
-        <div class="topline" style="margin-top:0">
-          <div>
-            <div class="muted">Prodotto</div>
-            <div class="title mono">${esc2(code)}</div>
+    if(!prodRows.length){
+      breakdown.innerHTML = '<div class="muted">Nessun controllo trovato per questo operatore.</div>';
+    }else{
+      breakdown.innerHTML = top3.map(([code,count])=>`
+        <div class="controlCard" style="margin-top:10px">
+          <div class="topline" style="margin-top:0">
+            <div>
+              <div class="muted">Prodotto</div>
+              <div class="title mono">${esc2(code)}</div>
+            </div>
+            <span class="tag">${count} controlli</span>
           </div>
-          <span class="tag">${count} controlli</span>
         </div>
-      </div>
-    `).join("") : '<div class="muted">Nessun controllo trovato per questo operatore.</div>';
+      `).join("") + (prodRows.length>3 ? `<div class="muted" style="margin-top:10px">+ altri ${prodRows.length-3} prodotti</div>` : "");
+    }
   }
 
-  // Lista ultimi 100 controlli
-  const list = checks.slice(0,100);
-  if(body){
-    body.innerHTML = list.map(c=>`
-      <tr>
-        <td class="mono">${esc2(c.dateISO||"")}</td>
-        <td class="mono">${esc2(c.code||"")}</td>
-        <td class="mono">${esc2(c.batch||"")}</td>
-        <td><span class="pill ${((c.outcome||"")==="OK")?"ok":"bad"}">${esc2(c.outcome||"")}</span></td>
-        <td class="right"><button class="smallbtn secondary" data-open="${esc2(c.id)}">Apri</button></td>
-      </tr>
-    `).join("") || `<tr><td colspan="5" class="muted">—</td></tr>`;
+  // Lista controlli (ultimi 5) + toggle per storico completo
+  let showAll = false;
 
-    body.querySelectorAll("button[data-open]").forEach(btn=>{
-      btn.addEventListener("click", async ()=>{
-        lastReturnView = "operatorHistory";
-        await openCheckDetailPage(btn.getAttribute("data-open"));
+  // aggiungo/riciclo il bottone dentro il blocco meta (se c'è)
+  if(meta){
+    // evita doppioni se riapro più volte
+    const existingBtn = meta.querySelector("#opHistToggleAllBtn");
+    if(existingBtn) existingBtn.remove();
+
+    const btn = document.createElement("button");
+    btn.id = "opHistToggleAllBtn";
+    btn.className = "smallbtn secondary";
+    btn.style.marginLeft = "10px";
+    meta.appendChild(btn);
+
+    btn.onclick = ()=>{ showAll = !showAll; renderList(); };
+  }
+
+  function renderList(){
+    const list = showAll ? checks : checks.slice(0,5);
+
+    const btn = document.getElementById("opHistToggleAllBtn");
+    if(btn) btn.textContent = showAll ? "Mostra ultimi 5" : "Storico completo";
+
+    if(body){
+      body.innerHTML = list.map(c=>`
+        <tr>
+          <td class="mono">${esc2(c.dateISO||"")}</td>
+          <td class="mono">${esc2(c.code||"")}</td>
+          <td class="mono">${esc2(c.lotto||"")}</td>
+          <td><span class="pill ${((c.outcome||"")==="OK")?"ok":"bad"}">${esc2(c.outcome||"")}</span>${c.corretto ? ' <span class="tag" title="Formula corretta tramite aggiunte">Corretto</span>' : ''}</td>
+          <td class="right"><button class="smallbtn secondary" data-open="${esc2(c.id)}">Apri</button></td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" class="muted">—</td></tr>`;
+
+      body.querySelectorAll("button[data-open]").forEach(btn=>{
+        btn.addEventListener("click", async ()=>{
+          lastReturnView = "operatorHistory";
+          await openCheckDetailPage(btn.getAttribute("data-open"));
+        });
       });
-    });
+    }
   }
+
+  renderList();
+}
 }
 
 function renderOperatorsList(){
