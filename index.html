@@ -294,7 +294,7 @@
       <img class="brandlogo" src="assets/logo_vivcolor.png" alt="VivColor" />
       <div>
         <h1>Registro Controlli (Cloud)</h1>
-        <div class="sub">Dati salvati nel cloud (Firebase).</div>
+        <div class="sub">Dati salvati nel cloud (Firestore). Versione prototipo.</div>
       </div>
     </div>
     <div class="muted" id="dbStatus">DB: pronto</div>
@@ -2745,8 +2745,21 @@ function computeChanged(){
   return JSON.stringify(detailCheck) !== JSON.stringify(detailOriginal);
 }
 function updateDetailTitle(){
+  if(!detailCheck) return;
+
   const base = `${detailCheck.code} — controllo`;
   document.getElementById("detailTitle").textContent = computeChanged() ? (base + " *") : base;
+
+  // "Corretto" se ci sono aggiunte compilate (anche dopo la chiusura, in modifica)
+  detailCheck.meta = detailCheck.meta || {};
+  detailCheck.corretto = !!(String(detailCheck.meta.aggiunte || "").trim().length > 0);
+
+  // Aggiorna riga meta in alto
+  const metaEl = document.getElementById("detailMeta");
+  if(metaEl){
+    metaEl.textContent =
+      `${fmtDateTime(detailCheck.dateISO)} • Lotto: ${detailCheck.lotto ?? ""} • Esito: ${detailCheck.outcome==="OK" ? "OK" : "Fuori STD"}${detailCheck.corretto ? " • Corretto" : ""}`;
+  }
 }
 
 function ensureResultForKey(checkObj, ctrl){
@@ -3072,6 +3085,10 @@ async function saveDetail(){
   }
 
   detailCheck.outcome = (detailCheck.results||[]).some(x=>x.ok===false) ? "FUORI_STD" : "OK";
+
+  // aggiorna anche il flag "corretto" in base alle aggiunte
+  detailCheck.meta = detailCheck.meta || {};
+  detailCheck.corretto = !!(String(detailCheck.meta.aggiunte || "").trim().length > 0);
 
   const t = tx([STORES.checks], "readwrite");
   await put(t.objectStore(STORES.checks), detailCheck);
